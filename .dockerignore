@@ -1,0 +1,50 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+README.md
+docs/
+散户常用技术指标与交易方法论.md
+
+# Docker files
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Scripts
+start.sh
+
+# Backend specific
+backend/__pycache__/
+backend/*.py[cod]
+backend/venv/
+backend/env/
+backend/.pytest_cache/
+
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
+frontend/build/

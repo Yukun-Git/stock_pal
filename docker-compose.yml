@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stock-backtest-backend
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=False
+      - API_VERSION=v1
+      - CORS_ORIGINS=http://localhost,http://localhost:80
+      - DATA_SOURCE=akshare
+      - CACHE_EXPIRY=3600
+      - DEFAULT_INITIAL_CAPITAL=100000
+      - DEFAULT_COMMISSION_RATE=0.0003
+    ports:
+      - "5000:5000"  # Expose for direct access if needed
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend Nginx Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stock-backtest-frontend
+    restart: unless-stopped
+    environment:
+      - API_BASE_URL=http://backend:5000
+    ports:
+      - "80:80"  # Main access point
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  stock-network:
+    driver: bridge
+    name: stock-backtest-network
+
+# Optional: Add volumes for data persistence if needed in the future
+# volumes:
+#   stock-data:
+#     name: stock-backtest-data
