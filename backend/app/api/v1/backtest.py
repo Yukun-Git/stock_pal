@@ -3,6 +3,7 @@
 from flask import request
 from flask_restful import Resource
 from app.services.data_service import DataService
+from app.services.cache_service import CacheService
 from app.services.indicator_service import IndicatorService
 from app.services.strategy_service import StrategyService
 from app.services.backtest_service import BacktestService
@@ -75,9 +76,10 @@ class BacktestResource(Resource):
             commission_rate = data.get('commission_rate', 0.0003)
             strategy_params = data.get('strategy_params', {})
 
-            # Step 1: Get stock data
+            # Step 1: Get stock data (with caching)
             stock_info = DataService.get_stock_info(symbol)
-            df = DataService.get_stock_data(
+            cache_service = CacheService()
+            df = cache_service.get_stock_data(
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,

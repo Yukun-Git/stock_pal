@@ -13,12 +13,11 @@ import {
   message,
   Spin,
   Typography,
-  AutoComplete,
 } from 'antd';
 import { SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { Stock, Strategy, BacktestResponse } from '@/types';
-import { stockApi, strategyApi, backtestApi } from '@/services/api';
+import type { Strategy, BacktestResponse } from '@/types';
+import { strategyApi, backtestApi } from '@/services/api';
 import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
 import EquityCurveChart from '@/components/EquityCurveChart';
@@ -26,12 +25,37 @@ import EquityCurveChart from '@/components/EquityCurveChart';
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
+// Fixed stock list (A-share + HK stocks)
+const STOCK_LIST = [
+  // Hong Kong stocks
+  { name: "腾讯控股", code: "00700.HK" },
+  { name: "阿里巴巴-SW", code: "09988.HK" },
+  { name: "美团-W", code: "03690.HK" },
+  { name: "小米集团-W", code: "01810.HK" },
+  { name: "京东集团-SW", code: "09618.HK" },
+  { name: "快手-W", code: "01024.HK" },
+  { name: "网易-S", code: "09999.HK" },
+  { name: "百度集团-SW", code: "09888.HK" },
+  { name: "哔哩哔哩-W", code: "09626.HK" },
+  { name: "携程集团-S", code: "09961.HK" },
+  // A-share stocks
+  { name: "贵州茅台", code: "600519.SH" },
+  { name: "宁德时代", code: "300750.SZ" },
+  { name: "五粮液", code: "000858.SZ" },
+  { name: "比亚迪", code: "002594.SZ" },
+  { name: "招商银行", code: "600036.SH" },
+  { name: "中国平安", code: "601318.SH" },
+  { name: "工商银行", code: "601398.SH" },
+  { name: "美的集团", code: "000333.SZ" },
+  { name: "隆基绿能", code: "601012.SH" },
+  { name: "紫金矿业", code: "601899.SH" },
+];
+
 export default function BacktestPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [stockOptions, setStockOptions] = useState<Stock[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [result, setResult] = useState<BacktestResponse | null>(null);
 
   // Load strategies on mount
@@ -48,20 +72,17 @@ export default function BacktestPage() {
     }
   };
 
-  const handleStockSearch = async (keyword: string) => {
-    if (!keyword || keyword.length < 2) {
-      setStockOptions([]);
-      return;
-    }
+  const handleStrategyChange = (strategyId: string) => {
+    const strategy = strategies.find(s => s.id === strategyId);
+    setSelectedStrategy(strategy || null);
 
-    setSearchLoading(true);
-    try {
-      const stocks = await stockApi.searchStocks(keyword);
-      setStockOptions(stocks);
-    } catch (error) {
-      message.error('搜索股票失败');
-    } finally {
-      setSearchLoading(false);
+    // Reset strategy parameter form values to defaults
+    if (strategy && strategy.parameters.length > 0) {
+      const defaultParams: Record<string, any> = {};
+      strategy.parameters.forEach(param => {
+        defaultParams[`param_${param.name}`] = param.default;
+      });
+      form.setFieldsValue(defaultParams);
     }
   };
 
@@ -73,6 +94,17 @@ export default function BacktestPage() {
       const startDate = values.dateRange ? toApiDateFormat(values.dateRange[0].toDate()) : undefined;
       const endDate = values.dateRange ? toApiDateFormat(values.dateRange[1].toDate()) : undefined;
 
+      // Extract strategy parameters from form values
+      const strategy_params: Record<string, any> = {};
+      if (selectedStrategy && selectedStrategy.parameters.length > 0) {
+        selectedStrategy.parameters.forEach(param => {
+          const formKey = `param_${param.name}`;
+          if (values[formKey] !== undefined) {
+            strategy_params[param.name] = values[formKey];
+          }
+        });
+      }
+
       const response = await backtestApi.runBacktest({
         symbol: values.symbol,
         strategy_id: values.strategy,
@@ -80,7 +112,7 @@ export default function BacktestPage() {
         end_date: endDate,
         initial_capital: values.initialCapital,
         commission_rate: values.commissionRate,
-        strategy_params: {},
+        strategy_params,
       });
 
       setResult(response);
@@ -181,16 +213,19 @@ export default function BacktestPage() {
               <Form.Item
                 label="股票代码/名称"
                 name="symbol"
-                rules={[{ required: true, message: '请输入股票代码或名称' }]}
+                rules={[{ required: true, message: '请选择股票' }]}
               >
-                <AutoComplete
-                  options={stockOptions.map(stock => ({
+                <Select
+                  placeholder="选择股票"
+                  showSearch
+                  optionFilterProp="children"
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={STOCK_LIST.map(stock => ({
                     value: stock.code,
                     label: `${stock.code} - ${stock.name}`,
                   }))}
-                  onSearch={handleStockSearch}
-                  placeholder="输入股票代码或名称搜索"
-                  notFoundContent={searchLoading ? <Spin size="small" /> : null}
                 />
               </Form.Item>
             </Col>
@@ -201,7 +236,7 @@ export default function BacktestPage() {
                 name="strategy"
                 rules={[{ required: true, message: '请选择交易策略' }]}
               >
-                <Select placeholder="选择交易策略">
+                <Select placeholder="选择交易策略" onChange={handleStrategyChange}>
                   {strategies.map(strategy => (
                     <Select.Option key={strategy.id} value={strategy.id}>
                       {strategy.name} - {strategy.description}
@@ -217,6 +252,36 @@ export default function BacktestPage() {
               </Form.Item>
             </Col>
           </Row>
+
+          {/* Strategy Parameters - Dynamic Form */}
+          {selectedStrategy && selectedStrategy.parameters.length > 0 && (
+            <Row gutter={16} style={{ marginTop: 8 }}>
+              <Col span={24}>
+                <Card size="small" title={`${selectedStrategy.name} 策略参数`} style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    {selectedStrategy.parameters.map((param) => (
+                      <Col xs={24} md={8} key={param.name}>
+                        <Form.Item
+                          label={param.label}
+                          name={`param_${param.name}`}
+                          tooltip={param.description}
+                          initialValue={param.default}
+                        >
+                          <InputNumber
+                            style={{ width: '100%' }}
+                            min={param.min}
+                            max={param.max}
+                            step={param.type === 'integer' ? 1 : 0.1}
+                            precision={param.type === 'integer' ? 0 : 2}
+                          />
+                        </Form.Item>
+                      </Col>
+                    ))}
+                  </Row>
+                </Card>
+              </Col>
+            </Row>
+          )}
 
           <Row gutter={16}>
             <Col xs={24} md={8}>

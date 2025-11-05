@@ -22,7 +22,7 @@ make up
 ```
 
 ### 访问系统
-打开浏览器访问：**http://localhost**
+打开浏览器访问：**http://localhost:4080**
 
 ---
 
@@ -47,14 +47,14 @@ make up
 ### 问题1: 端口被占用
 ```bash
 # 查找占用端口的进程
-lsof -i :80        # 前端端口
-lsof -i :5000      # 后端端口
+lsof -i :4080      # 前端端口
+lsof -i :4001      # 后端端口
 
 # 修改端口（编辑 docker-compose.yml）
 services:
   frontend:
     ports:
-      - "8080:80"  # 改用 8080
+      - "8080:80"  # 改用其他端口
 ```
 
 ### 问题2: 容器启动失败
@@ -81,7 +81,7 @@ docker network ls
 docker network inspect stock-backtest-network
 
 # 测试后端连接
-curl http://localhost:5000/health
+curl http://localhost:4001/health
 
 # 进入容器检查
 docker-compose exec backend bash
@@ -195,11 +195,11 @@ docker-compose up -d
 sleep 30
 
 # 3. 测试后端健康
-curl http://localhost:5000/health
+curl http://localhost:4001/health
 
 # 4. 在浏览器中打开
-open http://localhost  # macOS
-# 或直接访问 http://localhost
+open http://localhost:4080  # macOS
+# 或直接访问 http://localhost:4080
 
 # 5. 停止服务
 docker-compose down

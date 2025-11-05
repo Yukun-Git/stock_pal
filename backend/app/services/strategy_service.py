@@ -12,18 +12,20 @@ class StrategyService:
     STRATEGIES = {}
 
     @classmethod
-    def register_strategy(cls, name: str, description: str):
+    def register_strategy(cls, name: str, description: str, parameters: list = None):
         """Decorator to register a strategy.
 
         Args:
             name: Strategy name
             description: Strategy description
+            parameters: List of parameter definitions
         """
         def decorator(func: Callable):
             cls.STRATEGIES[name] = {
                 'name': name,
                 'description': description,
-                'function': func
+                'function': func,
+                'parameters': parameters or []
             }
             return func
         return decorator
@@ -33,13 +35,14 @@ class StrategyService:
         """Get all registered strategies.
 
         Returns:
-            List of strategy metadata
+            List of strategy metadata with parameters
         """
         return [
             {
                 'id': key,
                 'name': value['name'],
-                'description': value['description']
+                'description': value['description'],
+                'parameters': value.get('parameters', [])
             }
             for key, value in cls.STRATEGIES.items()
         ]
@@ -67,7 +70,18 @@ class StrategyService:
 
 @StrategyService.register_strategy(
     name='morning_star',
-    description='早晨之星：底部反转形态，三根K线组合，看涨信号'
+    description='早晨之星：底部反转形态，三根K线组合，看涨信号',
+    parameters=[
+        {
+            'name': 'hold_days',
+            'label': '持有天数',
+            'type': 'integer',
+            'default': 5,
+            'min': 1,
+            'max': 30,
+            'description': '买入后持有的天数'
+        }
+    ]
 )
 def morning_star_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """Morning Star pattern strategy."""
@@ -95,7 +109,27 @@ def morning_star_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFr
 
 @StrategyService.register_strategy(
     name='ma_cross',
-    description='均线金叉：短期均线上穿长期均线买入，下穿卖出'
+    description='均线金叉：短期均线上穿长期均线买入，下穿卖出',
+    parameters=[
+        {
+            'name': 'fast_period',
+            'label': '快速周期',
+            'type': 'integer',
+            'default': 5,
+            'min': 2,
+            'max': 60,
+            'description': '短期移动平均线的周期'
+        },
+        {
+            'name': 'slow_period',
+            'label': '慢速周期',
+            'type': 'integer',
+            'default': 20,
+            'min': 5,
+            'max': 250,
+            'description': '长期移动平均线的周期'
+        }
+    ]
 )
 def ma_cross_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """Moving Average crossover strategy."""
@@ -160,7 +194,27 @@ def macd_cross_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFram
 
 @StrategyService.register_strategy(
     name='kdj_cross',
-    description='KDJ金叉：K线上穿D线且在低位(< 30)买入，高位(> 70)卖出'
+    description='KDJ金叉：K线上穿D线且在低位(< 30)买入，高位(> 70)卖出',
+    parameters=[
+        {
+            'name': 'oversold',
+            'label': '超卖阈值',
+            'type': 'integer',
+            'default': 30,
+            'min': 10,
+            'max': 40,
+            'description': 'KDJ低于此值视为超卖区域'
+        },
+        {
+            'name': 'overbought',
+            'label': '超买阈值',
+            'type': 'integer',
+            'default': 70,
+            'min': 60,
+            'max': 90,
+            'description': 'KDJ高于此值视为超买区域'
+        }
+    ]
 )
 def kdj_cross_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """KDJ crossover strategy."""
@@ -194,7 +248,36 @@ def kdj_cross_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame
 
 @StrategyService.register_strategy(
     name='rsi_reversal',
-    description='RSI反转：RSI < 30超卖买入，RSI > 70超买卖出'
+    description='RSI反转：RSI < 30超卖买入，RSI > 70超买卖出',
+    parameters=[
+        {
+            'name': 'period',
+            'label': 'RSI周期',
+            'type': 'integer',
+            'default': 6,
+            'min': 2,
+            'max': 30,
+            'description': 'RSI指标的计算周期'
+        },
+        {
+            'name': 'oversold',
+            'label': '超卖阈值',
+            'type': 'integer',
+            'default': 30,
+            'min': 10,
+            'max': 40,
+            'description': 'RSI低于此值视为超卖'
+        },
+        {
+            'name': 'overbought',
+            'label': '超买阈值',
+            'type': 'integer',
+            'default': 70,
+            'min': 60,
+            'max': 90,
+            'description': 'RSI高于此值视为超买'
+        }
+    ]
 )
 def rsi_reversal_strategy(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """RSI reversal strategy."""

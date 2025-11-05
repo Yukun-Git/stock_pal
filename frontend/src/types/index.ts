@@ -4,10 +4,21 @@ export interface Stock {
   market?: string;
 }
 
+export interface StrategyParameter {
+  name: string;
+  label: string;
+  type: 'integer' | 'float' | 'string' | 'boolean';
+  default: any;
+  min?: number;
+  max?: number;
+  description?: string;
+}
+
 export interface Strategy {
   id: string;
   name: string;
   description: string;
+  parameters: StrategyParameter[];
 }
 
 export interface KLine {

@@ -88,7 +88,7 @@ docker-compose up -d
 docker-compose ps
 
 # 4. 访问系统 - 打开浏览器访问
-http://localhost
+http://localhost:4080
 ```
 
 **常用命令**：

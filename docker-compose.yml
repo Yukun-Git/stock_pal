@@ -17,8 +17,11 @@ services:
       - CACHE_EXPIRY=3600
       - DEFAULT_INITIAL_CAPITAL=100000
       - DEFAULT_COMMISSION_RATE=0.0003
+      - DB_PATH=/app/data/stock_cache.db
+    volumes:
+      - ./data:/app/data  # Persist SQLite database to host
     ports:
-      - "5000:5000"  # Expose for direct access if needed
+      - "4001:5000"  # Expose for direct access if needed
     networks:
       - stock-network
     healthcheck:
@@ -43,7 +46,7 @@ services:
     environment:
       - API_BASE_URL=http://backend:5000
     ports:
-      - "80:80"  # Main access point
+      - "4080:80"  # Main access point
     depends_on:
       backend:
         condition: service_healthy
@@ -65,8 +68,3 @@ networks:
   stock-network:
     driver: bridge
     name: stock-backtest-network
-
-# Optional: Add volumes for data persistence if needed in the future
-# volumes:
-#   stock-data:
-#     name: stock-backtest-data
