@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+对于重新构建镜像一定要谨慎，太费时间。大部分时候，能够通过重启服务就能达到目的。
+所有的端口设置一定要小心，绝不能和宿主机上的其他服务产生冲突（/Users/yukun-admin/projects/web3/web3-demo/PORT_INFO.md）。
+
 ## Project Overview
 
 A full-stack stock backtesting system designed for retail investors in Chinese A-share markets. The system allows users to test trading strategies using historical data and technical indicators.
@@ -55,14 +58,14 @@ make clean-all           # Remove everything including images
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python run.py            # Starts Flask dev server on port 5000
+python run.py            # Starts Flask dev server on port 4001
 ```
 
 **Frontend:**
 ```bash
 cd frontend
 npm install
-npm run dev              # Starts Vite dev server on port 5173
+npm run dev              # Starts Vite dev server on port 4000
 npm run build            # Production build (TypeScript + Vite)
 npm run lint             # ESLint checking
 npm run preview          # Preview production build

@@ -12,7 +12,7 @@ services:
       - FLASK_ENV=production
       - FLASK_DEBUG=False
       - API_VERSION=v1
-      - CORS_ORIGINS=http://localhost,http://localhost:80
+      - CORS_ORIGINS=http://localhost:4000,http://127.0.0.1:4000,http://localhost:4080,http://127.0.0.1:4080,http://localhost
       - DATA_SOURCE=akshare
       - CACHE_EXPIRY=3600
       - DEFAULT_INITIAL_CAPITAL=100000
@@ -20,6 +20,8 @@ services:
       - DB_PATH=/app/data/stock_cache.db
     volumes:
       - ./data:/app/data  # Persist SQLite database to host
+      - ./doc:/app/doc    # Mount documentation directory
+      - ./backend/app:/app/app  # Mount backend code for development
     ports:
       - "4001:5000"  # Expose for direct access if needed
     networks:
@@ -36,28 +38,33 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Frontend Nginx Service
+  # Frontend Development Service (Vite with hot-reload)
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:18-alpine
     container_name: stock-backtest-frontend
     restart: unless-stopped
+    working_dir: /app
     environment:
-      - API_BASE_URL=http://backend:5000
+      - VITE_BACKEND_URL=http://backend:5000  # For Vite proxy in Docker
+      # VITE_API_BASE_URL is not set, uses relative path (proxy)
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Preserve node_modules in container
     ports:
-      - "4080:80"  # Main access point
+      - "4000:4000"  # Host dev access on 4000
+      - "4080:4000"  # Alternate port matching PORT_INFO docs
+    command: sh -c "npm install && npm run dev -- --host"
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - stock-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/"]
       interval: 30s
       timeout: 3s
       retries: 3
-      start_period: 5s
+      start_period: 10s
     logging:
       driver: "json-file"
       options:

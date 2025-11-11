@@ -82,10 +82,10 @@ check_docker_running
 
 print_info "\n步骤 2/5: 检查端口占用..."
 port_check_failed=0
-if ! check_port 80; then
+if ! check_port 4000; then
     port_check_failed=1
 fi
-if ! check_port 5000; then
+if ! check_port 4001; then
     port_check_failed=1
 fi
 
@@ -160,8 +160,8 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}  🎉 启动成功！${NC}"
 echo -e "${GREEN}========================================${NC}\n"
 
-echo -e "访问地址: ${BLUE}http://localhost${NC}"
-echo -e "后端API:  ${BLUE}http://localhost:5000${NC}"
+echo -e "访问地址: ${BLUE}http://localhost:4000${NC}"
+echo -e "后端API:  ${BLUE}http://localhost:4001${NC}"
 echo ""
 echo "常用命令:"
 echo "  • 查看日志:   ${BLUE}docker-compose logs -f${NC}"
@@ -178,13 +178,13 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        open http://localhost
+        open http://localhost:4000
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
         # Linux
-        xdg-open http://localhost 2>/dev/null || echo "请手动打开浏览器访问 http://localhost"
+        xdg-open http://localhost:4000 2>/dev/null || echo "请手动打开浏览器访问 http://localhost:4000"
     else
         # Windows (Git Bash)
-        start http://localhost 2>/dev/null || echo "请手动打开浏览器访问 http://localhost"
+        start http://localhost:4000 2>/dev/null || echo "请手动打开浏览器访问 http://localhost:4000"
     fi
 fi
 

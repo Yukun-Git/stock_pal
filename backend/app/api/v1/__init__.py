@@ -2,7 +2,7 @@
 
 from flask_restful import Api
 from app.api.v1.stocks import StockListResource, StockSearchResource, StockDataResource
-from app.api.v1.backtest import BacktestResource, StrategyListResource
+from app.api.v1.backtest import BacktestResource, StrategyListResource, StrategyDocumentationResource
 
 
 def register_routes(api: Api):
@@ -18,4 +18,5 @@ def register_routes(api: Api):
 
     # Backtest routes
     api.add_resource(StrategyListResource, '/api/v1/strategies')
+    api.add_resource(StrategyDocumentationResource, '/api/v1/strategies/<string:strategy_id>/documentation')
     api.add_resource(BacktestResource, '/api/v1/backtest')

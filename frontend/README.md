@@ -62,7 +62,7 @@ frontend/
 创建 `.env.development` 文件：
 
 ```
-VITE_API_BASE_URL=http://localhost:5000
+VITE_API_BASE_URL=http://localhost:4001
 ```
 
 ## 开发说明

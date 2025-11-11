@@ -3,7 +3,6 @@ import {
   Card,
   Form,
   Select,
-  DatePicker,
   InputNumber,
   Button,
   Row,
@@ -13,17 +12,27 @@ import {
   message,
   Spin,
   Typography,
+  Input,
+  Switch,
 } from 'antd';
-import { SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, BulbOutlined, RiseOutlined, FallOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Strategy, BacktestResponse } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
 import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
 import EquityCurveChart from '@/components/EquityCurveChart';
+import StrategyDocModal from '@/components/StrategyDocModal';
 
 const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
+
+// Time range options
+const TIME_RANGES = [
+  { label: '最近一个月', value: '1m', months: 1 },
+  { label: '最近三个月', value: '3m', months: 3 },
+  { label: '最近六个月', value: '6m', months: 6 },
+  { label: '最近一年', value: '1y', months: 12 },
+];
 
 // Fixed stock list (A-share + HK stocks)
 const STOCK_LIST = [
@@ -55,8 +64,11 @@ export default function BacktestPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [selectedStrategies, setSelectedStrategies] = useState<string[]>([]);
   const [result, setResult] = useState<BacktestResponse | null>(null);
+  const [strategySearch, setStrategySearch] = useState('');
+  const [docModalOpen, setDocModalOpen] = useState(false);
+  const [currentDocStrategyId, setCurrentDocStrategyId] = useState<string | null>(null);
 
   // Load strategies on mount
   useEffect(() => {
@@ -72,48 +84,110 @@ export default function BacktestPage() {
     }
   };
 
-  const handleStrategyChange = (strategyId: string) => {
-    const strategy = strategies.find(s => s.id === strategyId);
-    setSelectedStrategy(strategy || null);
+  const handleViewDocumentation = (strategyId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止冒泡，避免触发策略选择
+    setCurrentDocStrategyId(strategyId);
+    setDocModalOpen(true);
+  };
 
-    // Reset strategy parameter form values to defaults
-    if (strategy && strategy.parameters.length > 0) {
-      const defaultParams: Record<string, any> = {};
-      strategy.parameters.forEach(param => {
-        defaultParams[`param_${param.name}`] = param.default;
-      });
-      form.setFieldsValue(defaultParams);
+  const handleStrategyToggle = (strategyId: string) => {
+    let newSelected: string[];
+    const isCurrentlySelected = selectedStrategies.includes(strategyId);
+
+    if (isCurrentlySelected) {
+      // Deselect - remove strategy
+      newSelected = selectedStrategies.filter(id => id !== strategyId);
+    } else {
+      // Select - add strategy and set default parameters
+      newSelected = [...selectedStrategies, strategyId];
+
+      // Set default parameters for the newly selected strategy
+      const strategy = strategies.find(s => s.id === strategyId);
+      if (strategy && strategy.parameters.length > 0) {
+        const defaultParams: Record<string, any> = {};
+        strategy.parameters.forEach(param => {
+          defaultParams[`param_${strategyId}_${param.name}`] = param.default;
+        });
+        form.setFieldsValue(defaultParams);
+      }
     }
+
+    setSelectedStrategies(newSelected);
   };
 
   const handleSubmit = async (values: any) => {
+    // Validate strategy selection
+    if (selectedStrategies.length === 0) {
+      message.warning('请至少选择一个策略');
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
     try {
-      const startDate = values.dateRange ? toApiDateFormat(values.dateRange[0].toDate()) : undefined;
-      const endDate = values.dateRange ? toApiDateFormat(values.dateRange[1].toDate()) : undefined;
+      // Calculate date range based on selected time range
+      let startDate: string | undefined;
+      let endDate: string | undefined;
 
-      // Extract strategy parameters from form values
-      const strategy_params: Record<string, any> = {};
-      if (selectedStrategy && selectedStrategy.parameters.length > 0) {
-        selectedStrategy.parameters.forEach(param => {
-          const formKey = `param_${param.name}`;
-          if (values[formKey] !== undefined) {
-            strategy_params[param.name] = values[formKey];
-          }
-        });
+      if (values.timeRange) {
+        const timeRangeOption = TIME_RANGES.find(tr => tr.value === values.timeRange);
+        if (timeRangeOption) {
+          const end = dayjs();
+          const start = end.subtract(timeRangeOption.months, 'month');
+          startDate = toApiDateFormat(start.toDate());
+          endDate = toApiDateFormat(end.toDate());
+        }
       }
 
-      const response = await backtestApi.runBacktest({
+      // Extract strategy parameters from form values
+      // Build per-strategy params: {"ma_cross": {...}, "macd_cross": {...}}
+      const per_strategy_params: Record<string, Record<string, any>> = {};
+      selectedStrategies.forEach(strategyId => {
+        const strategy = strategies.find(s => s.id === strategyId);
+        if (strategy && strategy.parameters.length > 0) {
+          const strategyParams: Record<string, any> = {};
+          strategy.parameters.forEach(param => {
+            const formKey = `param_${strategyId}_${param.name}`;
+            if (values[formKey] !== undefined) {
+              strategyParams[param.name] = values[formKey];
+            }
+          });
+          per_strategy_params[strategyId] = strategyParams;
+        }
+      });
+
+      // Prepare request payload
+      const requestData: any = {
         symbol: values.symbol,
-        strategy_id: values.strategy,
         start_date: startDate,
         end_date: endDate,
         initial_capital: values.initialCapital,
         commission_rate: values.commissionRate,
-        strategy_params,
-      });
+        per_strategy_params,
+      };
+
+      // Use strategy_ids for multiple strategies, strategy_id for single
+      if (selectedStrategies.length > 1) {
+        requestData.strategy_ids = selectedStrategies;
+        requestData.combine_mode = values.combineMode || 'AND';
+        if (values.combineMode === 'VOTE') {
+          requestData.vote_threshold = values.voteThreshold || 2;
+        }
+      } else if (selectedStrategies.length === 1) {
+        requestData.strategy_id = selectedStrategies[0];
+      }
+
+      const response = await backtestApi.runBacktest(requestData);
+
+      console.log('===== BACKTEST RESPONSE =====');
+      console.log('Full response:', response);
+      console.log('Has results:', !!response.results);
+      console.log('Has klines:', !!response.klines);
+      console.log('Has trades:', !!response.trades);
+      console.log('Strategy type:', typeof response.strategy);
+      console.log('Strategy value:', response.strategy);
+      console.log('=============================');
 
       setResult(response);
       message.success('回测完成！');
@@ -192,18 +266,129 @@ export default function BacktestPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      <Card>
-        <Title level={3}>
-          <ThunderboltOutlined /> 策略回测
-        </Title>
+    <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+      <Title level={2} style={{ marginBottom: 24 }}>
+        <ThunderboltOutlined /> 策略回测
+      </Title>
+
+      <Row gutter={24}>
+        {/* Left Panel - Strategy Documentation */}
+        <Col xs={24} lg={8}>
+          <Card
+            title="📚 策略文档"
+            style={{ position: 'sticky', top: 16, maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}
+          >
+            {/* Search Box */}
+            <Input
+              placeholder="搜索策略..."
+              prefix={<SearchOutlined />}
+              value={strategySearch}
+              onChange={(e) => setStrategySearch(e.target.value)}
+              style={{ marginBottom: 16 }}
+              allowClear
+            />
+
+            {strategies.length === 0 ? (
+              <Spin />
+            ) : (
+              <div>
+                {strategies
+                  .filter(strategy =>
+                    strategy.name.toLowerCase().includes(strategySearch.toLowerCase()) ||
+                    strategy.description.toLowerCase().includes(strategySearch.toLowerCase())
+                  )
+                  .map((strategy) => {
+                    const isSelected = selectedStrategies.includes(strategy.id);
+                    return (
+                      <div
+                        key={strategy.id}
+                        style={{
+                          padding: isSelected ? 16 : 12,
+                          marginBottom: 8,
+                          borderRadius: 8,
+                          border: isSelected ? '2px solid #1890ff' : '1px solid #e8e8e8',
+                          backgroundColor: isSelected ? '#e6f7ff' : '#fff',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onClick={() => handleStrategyToggle(strategy.id)}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.borderColor = '#d9d9d9';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.borderColor = '#e8e8e8';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }
+                        }}
+                      >
+                        {/* Strategy Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                          <Title level={5} style={{ margin: 0, flex: 1, fontSize: isSelected ? 15 : 14 }}>
+                            {strategy.name}
+                          </Title>
+                          <FileTextOutlined
+                            style={{
+                              color: '#1890ff',
+                              fontSize: 16,
+                              cursor: 'pointer',
+                              marginRight: 8,
+                            }}
+                            onClick={(e) => handleViewDocumentation(strategy.id, e)}
+                            title="查看详细文档"
+                          />
+                          {isSelected && (
+                            <CheckCircleOutlined style={{ color: '#1890ff', fontSize: 16 }} />
+                          )}
+                        </div>
+
+                        {/* Strategy Description - Always visible but compact */}
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: '#8c8c8c',
+                            display: 'block',
+                            marginTop: 4,
+                          }}
+                        >
+                          {strategy.description}
+                        </Text>
+                      </div>
+                    );
+                  })}
+
+                {/* No results message */}
+                {strategies.filter(s =>
+                  s.name.toLowerCase().includes(strategySearch.toLowerCase()) ||
+                  s.description.toLowerCase().includes(strategySearch.toLowerCase())
+                ).length === 0 && (
+                  <div style={{ textAlign: 'center', padding: 40, color: '#bfbfbf' }}>
+                    <SearchOutlined style={{ fontSize: 32, marginBottom: 8 }} />
+                    <div>未找到匹配的策略</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </Col>
+
+        {/* Right Panel - Backtest Form */}
+        <Col xs={24} lg={16}>
+          <Card>
+            <Title level={4} style={{ marginTop: 0 }}>
+              回测配置
+            </Title>
 
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={{
-            dateRange: [dayjs().subtract(2, 'year'), dayjs()],
+            symbol: '01810.HK',
+            timeRange: '3m',
             initialCapital: 100000,
             commissionRate: 0.0003,
           }}
@@ -231,54 +416,177 @@ export default function BacktestPage() {
             </Col>
 
             <Col xs={24} md={8}>
+              <Form.Item label="已选择策略">
+                <div style={{
+                  padding: '8px 12px',
+                  backgroundColor: selectedStrategies.length > 0 ? '#e6f7ff' : '#fafafa',
+                  border: `1px solid ${selectedStrategies.length > 0 ? '#1890ff' : '#d9d9d9'}`,
+                  borderRadius: 6,
+                  minHeight: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {selectedStrategies.length === 0 ? (
+                    <Text type="secondary">请从左侧选择策略</Text>
+                  ) : (
+                    <Text strong style={{ color: '#1890ff' }}>
+                      已选择 {selectedStrategies.length} 个策略
+                    </Text>
+                  )}
+                </div>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
               <Form.Item
-                label="交易策略"
-                name="strategy"
-                rules={[{ required: true, message: '请选择交易策略' }]}
+                label="回测时间区间"
+                name="timeRange"
+                rules={[{ required: true, message: '请选择回测时间区间' }]}
               >
-                <Select placeholder="选择交易策略" onChange={handleStrategyChange}>
-                  {strategies.map(strategy => (
-                    <Select.Option key={strategy.id} value={strategy.id}>
-                      {strategy.name} - {strategy.description}
+                <Select placeholder="选择时间区间">
+                  {TIME_RANGES.map(range => (
+                    <Select.Option key={range.value} value={range.value}>
+                      {range.label}
                     </Select.Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
-
-            <Col xs={24} md={8}>
-              <Form.Item label="回测时间区间" name="dateRange">
-                <RangePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
           </Row>
 
-          {/* Strategy Parameters - Dynamic Form */}
-          {selectedStrategy && selectedStrategy.parameters.length > 0 && (
+          {/* Strategy Parameters - Show each strategy's parameters separately */}
+          {selectedStrategies.length > 0 && selectedStrategies.map(strategyId => {
+            const strategy = strategies.find(s => s.id === strategyId);
+            if (!strategy || strategy.parameters.length === 0) return null;
+
+            return (
+              <Row gutter={16} style={{ marginTop: 8 }} key={strategyId}>
+                <Col span={24}>
+                  <div style={{
+                    padding: 16,
+                    backgroundColor: '#fafafa',
+                    borderRadius: 8,
+                    marginBottom: 16,
+                    border: '1px solid #d9d9d9'
+                  }}>
+                    <Text strong style={{ fontSize: 14 }}>
+                      {strategy.name} - 参数设置
+                    </Text>
+                    <Row gutter={16} style={{ marginTop: 12 }}>
+                      {strategy.parameters.map((param) => {
+                        // Render different input types based on parameter type
+                        let inputComponent;
+
+                        if (param.type === 'select' && param.options) {
+                          // Select dropdown
+                          inputComponent = (
+                            <Select placeholder={`请选择${param.label}`}>
+                              {param.options.map((opt: any) => (
+                                <Select.Option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </Select.Option>
+                              ))}
+                            </Select>
+                          );
+                        } else if (param.type === 'boolean') {
+                          // Boolean switch
+                          inputComponent = (
+                            <Switch
+                              checkedChildren="是"
+                              unCheckedChildren="否"
+                            />
+                          );
+                        } else {
+                          // Number input (integer or float)
+                          inputComponent = (
+                            <InputNumber
+                              style={{ width: '100%' }}
+                              min={param.min}
+                              max={param.max}
+                              step={param.type === 'integer' ? 1 : 0.1}
+                              precision={param.type === 'integer' ? 0 : 2}
+                            />
+                          );
+                        }
+
+                        return (
+                          <Col xs={24} md={8} key={param.name}>
+                            <Form.Item
+                              label={param.label}
+                              name={`param_${strategyId}_${param.name}`}
+                              tooltip={param.description}
+                              initialValue={param.default}
+                              valuePropName={param.type === 'boolean' ? 'checked' : 'value'}
+                            >
+                              {inputComponent}
+                            </Form.Item>
+                          </Col>
+                        );
+                      })}
+                    </Row>
+                  </div>
+                </Col>
+              </Row>
+            );
+          })}
+
+          {/* Strategy Combination Settings - Show only when multiple strategies selected */}
+          {selectedStrategies.length > 1 && (
             <Row gutter={16} style={{ marginTop: 8 }}>
               <Col span={24}>
-                <Card size="small" title={`${selectedStrategy.name} 策略参数`} style={{ marginBottom: 16 }}>
-                  <Row gutter={16}>
-                    {selectedStrategy.parameters.map((param) => (
-                      <Col xs={24} md={8} key={param.name}>
-                        <Form.Item
-                          label={param.label}
-                          name={`param_${param.name}`}
-                          tooltip={param.description}
-                          initialValue={param.default}
-                        >
-                          <InputNumber
-                            style={{ width: '100%' }}
-                            min={param.min}
-                            max={param.max}
-                            step={param.type === 'integer' ? 1 : 0.1}
-                            precision={param.type === 'integer' ? 0 : 2}
-                          />
-                        </Form.Item>
-                      </Col>
-                    ))}
+                <div style={{
+                  padding: 16,
+                  backgroundColor: '#fff7e6',
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  border: '1px solid #ffd591'
+                }}>
+                  <Text strong style={{ fontSize: 14, color: '#d46b08' }}>策略组合设置</Text>
+                  <Row gutter={16} style={{ marginTop: 12 }}>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="组合模式"
+                        name="combineMode"
+                        tooltip="选择多个策略时如何组合它们的信号"
+                        initialValue="AND"
+                      >
+                        <Select>
+                          <Select.Option value="AND">AND - 所有策略同时确认</Select.Option>
+                          <Select.Option value="OR">OR - 任一策略触发</Select.Option>
+                          <Select.Option value="VOTE">VOTE - 投票机制</Select.Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.combineMode !== currentValues.combineMode}>
+                        {({ getFieldValue }) => {
+                          const combineMode = getFieldValue('combineMode');
+                          return combineMode === 'VOTE' ? (
+                            <Form.Item
+                              label="投票阈值"
+                              name="voteThreshold"
+                              tooltip="需要多少个策略发出信号才执行交易"
+                              initialValue={Math.ceil(selectedStrategies.length / 2)}
+                            >
+                              <InputNumber
+                                style={{ width: '100%' }}
+                                min={1}
+                                max={selectedStrategies.length}
+                                addonAfter={`/ ${selectedStrategies.length}`}
+                              />
+                            </Form.Item>
+                          ) : (
+                            <div style={{ paddingTop: 30, color: '#8c8c8c', fontSize: 12 }}>
+                              {combineMode === 'AND' && '所有策略必须同时发出信号才会执行交易'}
+                              {combineMode === 'OR' && '任何一个策略发出信号即可执行交易'}
+                            </div>
+                          );
+                        }}
+                      </Form.Item>
+                    </Col>
                   </Row>
-                </Card>
+                </div>
               </Col>
             </Row>
           )}
@@ -318,6 +626,7 @@ export default function BacktestPage() {
                   icon={<SearchOutlined />}
                   size="large"
                   block
+                  disabled={selectedStrategies.length === 0}
                 >
                   开始回测
                 </Button>
@@ -333,10 +642,58 @@ export default function BacktestPage() {
         </Card>
       )}
 
+      {(() => {
+        console.log('Render check - result:', !!result, 'loading:', loading, 'selectedStrategies:', selectedStrategies.length);
+        return null;
+      })()}
+
       {result && !loading && (
         <>
+          {/* Strategy Info */}
+          {selectedStrategies.length > 0 && (
+            <Card style={{ marginTop: 24, backgroundColor: '#fafafa' }}>
+              <Row align="middle" gutter={16}>
+                <Col>
+                  <Text strong style={{ fontSize: 14 }}>使用策略:</Text>
+                </Col>
+                <Col flex="auto">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {selectedStrategies.map(strategyId => {
+                      const strategy = strategies.find(s => s.id === strategyId);
+                      return strategy ? (
+                        <div
+                          key={strategyId}
+                          style={{
+                            padding: '4px 12px',
+                            backgroundColor: '#1890ff',
+                            color: 'white',
+                            borderRadius: 4,
+                            fontSize: 13,
+                          }}
+                        >
+                          {strategy.name}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </Col>
+                {selectedStrategies.length > 1 && (
+                  <Col>
+                    <Text style={{ fontSize: 13, color: '#8c8c8c' }}>
+                      组合模式: <Text strong style={{ color: '#d46b08' }}>
+                        {form.getFieldValue('combineMode') === 'AND' && 'AND (全部确认)'}
+                        {form.getFieldValue('combineMode') === 'OR' && 'OR (任一触发)'}
+                        {form.getFieldValue('combineMode') === 'VOTE' && `VOTE (${form.getFieldValue('voteThreshold')}/${selectedStrategies.length})`}
+                      </Text>
+                    </Text>
+                  </Col>
+                )}
+              </Row>
+            </Card>
+          )}
+
           {/* Results Statistics */}
-          <Card title="回测结果" style={{ marginTop: 24 }}>
+          <Card title="📊 回测结果" style={{ marginTop: 24 }}>
             <Row gutter={16}>
               <Col xs={12} sm={8} md={6}>
                 <Statistic
@@ -408,6 +765,132 @@ export default function BacktestPage() {
             </Row>
           </Card>
 
+          {/* Signal Analysis - Current Market Position */}
+          {result.signal_analysis && result.signal_analysis.analyses && result.signal_analysis.analyses.length > 0 && (
+            <Card
+              title={
+                <span>
+                  <BulbOutlined style={{ marginRight: 8, color: '#faad14' }} />
+                  当前信号分析
+                </span>
+              }
+              style={{ marginTop: 24 }}
+            >
+              <div style={{ marginBottom: 16 }}>
+                <Text type="secondary">
+                  基于 <Text strong>{result.signal_analysis.date}</Text> 的数据
+                  （收盘价：<Text strong style={{ color: '#1890ff' }}>¥{result.signal_analysis.close_price.toFixed(2)}</Text>）
+                </Text>
+              </div>
+
+              {result.signal_analysis.analyses.map((analysis, index) => {
+                // 根据status设置颜色
+                let statusColor = '#8c8c8c';
+                let statusIcon = null;
+                if (analysis.status === 'bullish' || analysis.status.includes('buy')) {
+                  statusColor = '#ff4d4f';
+                  statusIcon = <RiseOutlined />;
+                } else if (analysis.status === 'bearish' || analysis.status.includes('sell')) {
+                  statusColor = '#52c41a';
+                  statusIcon = <FallOutlined />;
+                }
+
+                // 根据proximity设置徽章
+                let proximityBadge = null;
+                if (analysis.proximity === 'very_close') {
+                  proximityBadge = <span style={{
+                    marginLeft: 8,
+                    padding: '2px 8px',
+                    backgroundColor: '#fff2e8',
+                    color: '#fa8c16',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontWeight: 'bold'
+                  }}>⚠️ 非常接近</span>;
+                } else if (analysis.proximity === 'close') {
+                  proximityBadge = <span style={{
+                    marginLeft: 8,
+                    padding: '2px 8px',
+                    backgroundColor: '#e6f7ff',
+                    color: '#1890ff',
+                    borderRadius: 4,
+                    fontSize: 12
+                  }}>接近</span>;
+                }
+
+                return (
+                  <div
+                    key={analysis.strategy_id}
+                    style={{
+                      marginBottom: index < result.signal_analysis!.analyses.length - 1 ? 20 : 0,
+                      padding: 16,
+                      backgroundColor: '#fafafa',
+                      borderRadius: 8,
+                      borderLeft: `4px solid ${statusColor}`
+                    }}
+                  >
+                    {/* Strategy Name */}
+                    <div style={{ marginBottom: 12 }}>
+                      <Text strong style={{ fontSize: 15, color: statusColor }}>
+                        {statusIcon} {analysis.strategy_name}
+                      </Text>
+                      {proximityBadge}
+                    </div>
+
+                    {/* Indicators */}
+                    {analysis.indicators && Object.keys(analysis.indicators).length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <Row gutter={[16, 8]}>
+                          {Object.entries(analysis.indicators).map(([key, value]) => (
+                            <Col key={key} xs={12} sm={8} md={6}>
+                              <div style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#fff',
+                                borderRadius: 4,
+                                border: '1px solid #e8e8e8'
+                              }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>{key}:</Text>
+                                <br />
+                                <Text strong style={{ fontSize: 13 }}>{value}</Text>
+                              </div>
+                            </Col>
+                          ))}
+                        </Row>
+                      </div>
+                    )}
+
+                    {/* Current State */}
+                    <div style={{ marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13 }}>
+                        📍 <Text strong>当前状态：</Text>{analysis.current_state}
+                      </Text>
+                    </div>
+
+                    {/* Proximity Description */}
+                    <div style={{ marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13 }}>
+                        📏 <Text strong>距离信号：</Text>{analysis.proximity_description}
+                      </Text>
+                    </div>
+
+                    {/* Suggestion */}
+                    <div style={{
+                      marginTop: 12,
+                      padding: 12,
+                      backgroundColor: '#e6f7ff',
+                      borderRadius: 6,
+                      borderLeft: '3px solid #1890ff'
+                    }}>
+                      <Text style={{ fontSize: 13, color: '#096dd9' }}>
+                        💡 <Text strong>操作建议：</Text>{analysis.suggestion}
+                      </Text>
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
           {/* K-Line Chart */}
           <Card title="K线图与买卖点" style={{ marginTop: 24 }}>
             <KLineChart
@@ -428,7 +911,7 @@ export default function BacktestPage() {
           </Card>
 
           {/* Trade History */}
-          <Card title="交易明细" style={{ marginTop: 24 }}>
+          <Card title="📋 交易明细" style={{ marginTop: 24 }}>
             <Table
               dataSource={result.trades}
               columns={tradeColumns}
@@ -439,6 +922,15 @@ export default function BacktestPage() {
           </Card>
         </>
       )}
+        </Col>
+      </Row>
+
+      {/* Strategy Documentation Modal */}
+      <StrategyDocModal
+        strategyId={currentDocStrategyId}
+        open={docModalOpen}
+        onClose={() => setDocModalOpen(false)}
+      />
     </div>
   );
 }

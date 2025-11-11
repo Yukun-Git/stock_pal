@@ -150,7 +150,7 @@ cp .env.example .env
 python run.py
 ```
 
-后端服务将运行在 `http://localhost:5000`
+后端服务将运行在 `http://localhost:4001`
 
 #### 2. 前端安装与启动
 
@@ -165,11 +165,11 @@ npm install
 npm run dev
 ```
 
-前端应用将运行在 `http://localhost:5173`
+前端应用将运行在 `http://localhost:4000`
 
 #### 3. 访问系统
 
-打开浏览器访问：`http://localhost:5173`
+打开浏览器访问：`http://localhost:4000`
 
 ## 📖 使用说明
 
@@ -290,10 +290,10 @@ POST /api/v1/backtest
 ### 1. 后端启动失败
 - 检查Python版本是否 >= 3.8
 - 检查是否所有依赖都已安装：`pip install -r requirements.txt`
-- 检查5000端口是否被占用
+- 检查4001端口是否被占用
 
 ### 2. 前端无法连接后端
-- 确保后端服务已启动（http://localhost:5000）
+- 确保后端服务已启动（http://localhost:4001）
 - 检查前端 `.env.development` 中的 `VITE_API_BASE_URL` 配置
 - 检查浏览器控制台是否有CORS错误
 

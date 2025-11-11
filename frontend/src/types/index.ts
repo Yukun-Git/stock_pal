@@ -7,11 +7,12 @@ export interface Stock {
 export interface StrategyParameter {
   name: string;
   label: string;
-  type: 'integer' | 'float' | 'string' | 'boolean';
+  type: 'integer' | 'float' | 'string' | 'boolean' | 'select';
   default: any;
   min?: number;
   max?: number;
   description?: string;
+  options?: Array<{ value: string; label: string }>;
 }
 
 export interface Strategy {
@@ -19,6 +20,12 @@ export interface Strategy {
   name: string;
   description: string;
   parameters: StrategyParameter[];
+}
+
+export interface StrategyDocumentation {
+  strategy_id: string;
+  strategy_name: string;
+  content: string;
 }
 
 export interface KLine {
@@ -74,13 +81,38 @@ export interface BacktestRequest {
   strategy_params?: Record<string, any>;
 }
 
+export interface StrategyAnalysis {
+  strategy_id: string;
+  strategy_name: string;
+  status: string;
+  proximity?: string;
+  indicators?: Record<string, any>;
+  current_state: string;
+  proximity_description: string;
+  suggestion: string;
+  message?: string;
+}
+
+export interface SignalAnalysis {
+  date: string;
+  close_price: number;
+  analyses: StrategyAnalysis[];
+  status?: string;
+  message?: string;
+}
+
 export interface BacktestResponse {
   stock: Stock;
-  strategy: string;
+  strategy: string | {
+    strategies: string[];
+    combine_mode: string;
+    vote_threshold?: number;
+  };
   results: BacktestResult;
   trades: Trade[];
   equity_curve: EquityPoint[];
   klines: KLine[];
   buy_points: Array<{ date: string; price: number }>;
   sell_points: Array<{ date: string; price: number }>;
+  signal_analysis?: SignalAnalysis;
 }

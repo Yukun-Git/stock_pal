@@ -1,38 +1,106 @@
-# Python
+# -----------------------------
+# Global
+# -----------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# -----------------------------
+# Python / Flask backend
+# -----------------------------
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 venv/
 env/
 ENV/
-*.egg-info/
-.pytest_cache/
-.coverage
-
-# Node
-node_modules/
+.venv/
+backend/venv/
+build/
 dist/
-*.local
-.DS_Store
+develop-eggs/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+share/python-wheels/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.manifest
+*.spec
+dmypy.json
+.pyre/
 
-# Environment
+# Backend data/cache artifacts
+data/*.db*
+data/*.sqlite*
+data/*.pkl
+data/*.csv
+data/*.parquet
+data/cache/
+data/temp/
+data/logs/
+
+# -----------------------------
+# Node / React frontend
+# -----------------------------
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# -----------------------------
+# Environment & secrets
+# -----------------------------
 .env
-.env.local
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+.env.docker.local
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Logs
+# -----------------------------
+# Logs & runtime output
+# -----------------------------
 logs/
 *.log
+*.pid
+*.seed
+tmp/
 
-# Data cache
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
+# -----------------------------
+# IDE / tooling
+# -----------------------------
+.vscode/
+.idea/
+.history/
+.serena/
+.code-workspace
+
+# -----------------------------
+# Docker / deployment
+# -----------------------------
+docker-compose.override.yml
+docker/data/
+backups/

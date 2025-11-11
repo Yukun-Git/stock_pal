@@ -59,6 +59,18 @@ class DataService:
                 '换手率': 'turnover'
             })
 
+            # Calculate amplitude if high and low are available
+            if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
+                # Calculate amplitude as (high - low) / previous close * 100
+                # For first row, use (high - low) / low * 100
+                prev_close = df['close'].shift(1)
+                df['amplitude'] = ((df['high'] - df['low']) / prev_close * 100).round(2)
+                # Fill first row
+                df.loc[0, 'amplitude'] = ((df.loc[0, 'high'] - df.loc[0, 'low']) / df.loc[0, 'low'] * 100) if df.loc[0, 'low'] > 0 else 0
+            else:
+                # Set amplitude to None if we can't calculate it
+                df['amplitude'] = None
+
             # Convert date to datetime
             df['date'] = pd.to_datetime(df['date'])
 
@@ -157,6 +169,7 @@ class DataService:
             # Rename columns to English
             df = df.rename(columns={
                 '日期': 'date',
+                '股票代码': 'stock_code',
                 '开盘': 'open',
                 '收盘': 'close',
                 '最高': 'high',
@@ -168,6 +181,10 @@ class DataService:
                 '涨跌额': 'change',
                 '换手率': 'turnover'
             })
+
+            # Drop stock_code column as it's redundant (we already have symbol)
+            if 'stock_code' in df.columns:
+                df = df.drop(columns=['stock_code'])
 
             # Convert date to datetime
             df['date'] = pd.to_datetime(df['date'])
@@ -241,3 +258,60 @@ class DataService:
                 'name': f'Stock {symbol}',
                 'market': 'Unknown'
             }
+
+    @staticmethod
+    def resample_to_timeframe(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """将日线数据重采样为其他周期.
+
+        Args:
+            df: 日线数据，必须包含date, open, high, low, close, volume列
+            timeframe: 时间周期
+                - 'D': 日线（不做转换，直接返回）
+                - 'W': 周线
+                - 'M': 月线
+
+        Returns:
+            重采样后的DataFrame
+
+        Raises:
+            ValueError: 如果timeframe不支持
+        """
+        if timeframe == 'D':
+            return df
+
+        if timeframe not in ['W', 'M']:
+            raise ValueError(f"Unsupported timeframe: {timeframe}. Supported: D, W, M")
+
+        # 确保date列是datetime类型
+        if not pd.api.types.is_datetime64_any_dtype(df['date']):
+            df['date'] = pd.to_datetime(df['date'])
+
+        # 设置日期索引
+        df = df.set_index('date')
+
+        # OHLC重采样规则
+        ohlc_dict = {
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }
+
+        # 如果有其他列（如amount, pct_change等），也包含进来
+        for col in df.columns:
+            if col not in ohlc_dict:
+                if col in ['amount']:
+                    ohlc_dict[col] = 'sum'
+                elif col in ['amplitude', 'pct_change', 'change', 'turnover']:
+                    # 这些字段在重采样时不太有意义，可以计算或忽略
+                    # 这里选择忽略
+                    pass
+
+        # 执行重采样
+        resampled = df.resample(timeframe).agg(ohlc_dict).dropna()
+
+        # 重置索引，将date恢复为列
+        resampled = resampled.reset_index()
+
+        return resampled

@@ -77,8 +77,8 @@ prod: up ## Start services in production mode (alias for 'up')
 
 health: ## Check health status of all services
 	@echo "$(BLUE)Checking service health...$(NC)"
-	@echo "Backend: " && curl -s http://localhost:5000/health | grep -q "ok" && echo "$(GREEN)OK$(NC)" || echo "$(RED)FAIL$(NC)"
-	@echo "Frontend: " && curl -s http://localhost/ > /dev/null && echo "$(GREEN)OK$(NC)" || echo "$(RED)FAIL$(NC)"
+	@echo "Backend: " && curl -s http://localhost:4001/health | grep -q "ok" && echo "$(GREEN)OK$(NC)" || echo "$(RED)FAIL$(NC)"
+	@echo "Frontend: " && curl -s http://localhost:4000/ > /dev/null && echo "$(GREEN)OK$(NC)" || echo "$(RED)FAIL$(NC)"
 
 stats: ## Show resource usage statistics
 	docker stats stock-backtest-backend stock-backtest-frontend

@@ -11,7 +11,12 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
     # CORS
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173').split(',')
+    CORS_ORIGINS = os.environ.get(
+        'CORS_ORIGINS',
+        'http://localhost:4000,http://127.0.0.1:4000,'
+        'http://localhost:4080,http://127.0.0.1:4080,'
+        'http://localhost:4001,http://127.0.0.1:4001,http://localhost'
+    ).split(',')
 
     # API
     API_VERSION = os.environ.get('API_VERSION', 'v1')

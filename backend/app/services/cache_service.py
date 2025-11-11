@@ -152,6 +152,16 @@ class CacheService:
         # Convert date to string for SQLite
         df_copy['date'] = df_copy['date'].dt.strftime('%Y-%m-%d')
 
+        # Ensure all expected columns exist (set to None if missing)
+        expected_columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume',
+                           'amount', 'amplitude', 'pct_change', 'change', 'turnover']
+        for col in expected_columns:
+            if col not in df_copy.columns:
+                df_copy[col] = None
+
+        # Keep only expected columns in correct order
+        df_copy = df_copy[expected_columns]
+
         # Save to database (replace duplicates)
         df_copy.to_sql('stock_data', conn, if_exists='append', index=False,
                        method='multi')

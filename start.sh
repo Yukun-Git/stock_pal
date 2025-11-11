@@ -35,7 +35,7 @@ python run.py &
 BACKEND_PID=$!
 cd ..
 echo "✅ 后端服务已启动 (PID: $BACKEND_PID)"
-echo "   访问: http://localhost:5000"
+echo "   访问: http://localhost:4001"
 echo ""
 
 # Wait for backend to start
@@ -48,7 +48,7 @@ npm run dev &
 FRONTEND_PID=$!
 cd ..
 echo "✅ 前端服务已启动 (PID: $FRONTEND_PID)"
-echo "   访问: http://localhost:5173"
+echo "   访问: http://localhost:4000"
 echo ""
 
 echo "🎉 系统启动完成！"
