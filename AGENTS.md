@@ -1,6 +1,7 @@
 # Repository Guidelines
 
-所有端口相关配置都要先参考 /Users/yukun-admin/projects/web3/web3-demo/PORT_INFO.md，确保与现有服务不冲突。
+所有端口相关配置都要先参考 PORT_INFO.md，确保与现有服务不冲突。
+目前项目处于早期阶段，所有的详细设计和开发计划都不需要考虑数据迁移之类的内容。
 
 ## Project Structure & Module Organization
 `backend/app` hosts the Flask stack: `api/v1` exposes REST resources, `services` implements data, indicator, strategy, and backtest logic, and `utils`/`models` provide shared helpers beside the `run.py` entrypoint. React code stays in `frontend/src` (`pages`, `components`, `services/api.ts`, `types`). Root automation relies on `Makefile` plus `docker-compose.yml`; supporting docs live in `doc/` and cacheable datasets belong in `data/`.

@@ -13,9 +13,8 @@ import {
   Spin,
   Typography,
   Input,
-  Switch,
 } from 'antd';
-import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, BulbOutlined, RiseOutlined, FallOutlined } from '@ant-design/icons';
+import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Strategy, BacktestResponse } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
@@ -23,6 +22,8 @@ import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
 import EquityCurveChart from '@/components/EquityCurveChart';
 import StrategyDocModal from '@/components/StrategyDocModal';
+import { ParameterInput } from '@/components/parameters';
+import { SignalAnalysisCard } from '@/components/signalAnalysis';
 
 const { Title, Text } = Typography;
 
@@ -474,56 +475,19 @@ export default function BacktestPage() {
                       {strategy.name} - 参数设置
                     </Text>
                     <Row gutter={16} style={{ marginTop: 12 }}>
-                      {strategy.parameters.map((param) => {
-                        // Render different input types based on parameter type
-                        let inputComponent;
-
-                        if (param.type === 'select' && param.options) {
-                          // Select dropdown
-                          inputComponent = (
-                            <Select placeholder={`请选择${param.label}`}>
-                              {param.options.map((opt: any) => (
-                                <Select.Option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </Select.Option>
-                              ))}
-                            </Select>
-                          );
-                        } else if (param.type === 'boolean') {
-                          // Boolean switch
-                          inputComponent = (
-                            <Switch
-                              checkedChildren="是"
-                              unCheckedChildren="否"
-                            />
-                          );
-                        } else {
-                          // Number input (integer or float)
-                          inputComponent = (
-                            <InputNumber
-                              style={{ width: '100%' }}
-                              min={param.min}
-                              max={param.max}
-                              step={param.type === 'integer' ? 1 : 0.1}
-                              precision={param.type === 'integer' ? 0 : 2}
-                            />
-                          );
-                        }
-
-                        return (
-                          <Col xs={24} md={8} key={param.name}>
-                            <Form.Item
-                              label={param.label}
-                              name={`param_${strategyId}_${param.name}`}
-                              tooltip={param.description}
-                              initialValue={param.default}
-                              valuePropName={param.type === 'boolean' ? 'checked' : 'value'}
-                            >
-                              {inputComponent}
-                            </Form.Item>
-                          </Col>
-                        );
-                      })}
+                      {strategy.parameters.map((param) => (
+                        <Col xs={24} md={8} key={param.name}>
+                          <Form.Item
+                            label={param.label}
+                            name={`param_${strategyId}_${param.name}`}
+                            tooltip={param.description}
+                            initialValue={param.default}
+                            valuePropName={param.type === 'boolean' ? 'checked' : 'value'}
+                          >
+                            <ParameterInput parameter={param} />
+                          </Form.Item>
+                        </Col>
+                      ))}
                     </Row>
                   </div>
                 </Col>
@@ -766,129 +730,8 @@ export default function BacktestPage() {
           </Card>
 
           {/* Signal Analysis - Current Market Position */}
-          {result.signal_analysis && result.signal_analysis.analyses && result.signal_analysis.analyses.length > 0 && (
-            <Card
-              title={
-                <span>
-                  <BulbOutlined style={{ marginRight: 8, color: '#faad14' }} />
-                  当前信号分析
-                </span>
-              }
-              style={{ marginTop: 24 }}
-            >
-              <div style={{ marginBottom: 16 }}>
-                <Text type="secondary">
-                  基于 <Text strong>{result.signal_analysis.date}</Text> 的数据
-                  （收盘价：<Text strong style={{ color: '#1890ff' }}>¥{result.signal_analysis.close_price.toFixed(2)}</Text>）
-                </Text>
-              </div>
-
-              {result.signal_analysis.analyses.map((analysis, index) => {
-                // 根据status设置颜色
-                let statusColor = '#8c8c8c';
-                let statusIcon = null;
-                if (analysis.status === 'bullish' || analysis.status.includes('buy')) {
-                  statusColor = '#ff4d4f';
-                  statusIcon = <RiseOutlined />;
-                } else if (analysis.status === 'bearish' || analysis.status.includes('sell')) {
-                  statusColor = '#52c41a';
-                  statusIcon = <FallOutlined />;
-                }
-
-                // 根据proximity设置徽章
-                let proximityBadge = null;
-                if (analysis.proximity === 'very_close') {
-                  proximityBadge = <span style={{
-                    marginLeft: 8,
-                    padding: '2px 8px',
-                    backgroundColor: '#fff2e8',
-                    color: '#fa8c16',
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontWeight: 'bold'
-                  }}>⚠️ 非常接近</span>;
-                } else if (analysis.proximity === 'close') {
-                  proximityBadge = <span style={{
-                    marginLeft: 8,
-                    padding: '2px 8px',
-                    backgroundColor: '#e6f7ff',
-                    color: '#1890ff',
-                    borderRadius: 4,
-                    fontSize: 12
-                  }}>接近</span>;
-                }
-
-                return (
-                  <div
-                    key={analysis.strategy_id}
-                    style={{
-                      marginBottom: index < result.signal_analysis!.analyses.length - 1 ? 20 : 0,
-                      padding: 16,
-                      backgroundColor: '#fafafa',
-                      borderRadius: 8,
-                      borderLeft: `4px solid ${statusColor}`
-                    }}
-                  >
-                    {/* Strategy Name */}
-                    <div style={{ marginBottom: 12 }}>
-                      <Text strong style={{ fontSize: 15, color: statusColor }}>
-                        {statusIcon} {analysis.strategy_name}
-                      </Text>
-                      {proximityBadge}
-                    </div>
-
-                    {/* Indicators */}
-                    {analysis.indicators && Object.keys(analysis.indicators).length > 0 && (
-                      <div style={{ marginBottom: 12 }}>
-                        <Row gutter={[16, 8]}>
-                          {Object.entries(analysis.indicators).map(([key, value]) => (
-                            <Col key={key} xs={12} sm={8} md={6}>
-                              <div style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#fff',
-                                borderRadius: 4,
-                                border: '1px solid #e8e8e8'
-                              }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>{key}:</Text>
-                                <br />
-                                <Text strong style={{ fontSize: 13 }}>{value}</Text>
-                              </div>
-                            </Col>
-                          ))}
-                        </Row>
-                      </div>
-                    )}
-
-                    {/* Current State */}
-                    <div style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 13 }}>
-                        📍 <Text strong>当前状态：</Text>{analysis.current_state}
-                      </Text>
-                    </div>
-
-                    {/* Proximity Description */}
-                    <div style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 13 }}>
-                        📏 <Text strong>距离信号：</Text>{analysis.proximity_description}
-                      </Text>
-                    </div>
-
-                    {/* Suggestion */}
-                    <div style={{
-                      marginTop: 12,
-                      padding: 12,
-                      backgroundColor: '#e6f7ff',
-                      borderRadius: 6,
-                      borderLeft: '3px solid #1890ff'
-                    }}>
-                      <Text style={{ fontSize: 13, color: '#096dd9' }}>
-                        💡 <Text strong>操作建议：</Text>{analysis.suggestion}
-                      </Text>
-                    </div>
-                  </div>
-                );
-              })}
-            </Card>
+          {result.signal_analysis && (
+            <SignalAnalysisCard signalAnalysis={result.signal_analysis} />
           )}
 
           {/* K-Line Chart */}
