@@ -40,7 +40,7 @@ export interface KLine {
 
 export interface Trade {
   date: string;
-  type: 'buy' | 'sell';
+  action: 'buy' | 'sell';  // 修复：字段名应为 action（与后端一致）
   price: number;
   shares: number;
   amount: number;
@@ -58,6 +58,7 @@ export interface EquityPoint {
 }
 
 export interface BacktestResult {
+  // ===== 基础指标（向后兼容）=====
   initial_capital: number;
   final_capital: number;
   total_return: number;
@@ -69,6 +70,24 @@ export interface BacktestResult {
   avg_profit: number;
   avg_loss: number;
   profit_factor: number;
+
+  // ===== 新增增强指标 =====
+  // 收益指标
+  cagr?: number;                      // 年化收益率
+
+  // 风险指标
+  volatility?: number;                // 波动率（年化）
+  max_drawdown_duration?: number;     // 最大回撤持续期（天）
+
+  // 风险调整收益
+  sharpe_ratio?: number;              // 夏普比率
+  sortino_ratio?: number;             // 索提诺比率
+  calmar_ratio?: number;              // 卡玛比率
+
+  // 交易统计
+  avg_trade_return?: number;          // 平均交易收益率
+  avg_holding_period?: number;        // 平均持仓天数
+  turnover_rate?: number;             // 换手率（年化）
 }
 
 export interface BacktestRequest {
@@ -101,6 +120,14 @@ export interface SignalAnalysis {
   message?: string;
 }
 
+export interface BacktestMetadata {
+  backtest_id: string;               // 回测唯一ID
+  engine_version: string;            // 引擎版本
+  execution_time_seconds: number;    // 执行时间（秒）
+  environment?: string;              // 交易环境
+  started_at?: string;               // 开始时间
+}
+
 export interface BacktestResponse {
   stock: Stock;
   strategy: string | {
@@ -115,4 +142,5 @@ export interface BacktestResponse {
   buy_points: Array<{ date: string; price: number }>;
   sell_points: Array<{ date: string; price: number }>;
   signal_analysis?: SignalAnalysis;
+  metadata?: BacktestMetadata;       // 新增：元数据
 }

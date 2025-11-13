@@ -22,6 +22,7 @@ services:
       - ./data:/app/data  # Persist SQLite database to host
       - ./doc:/app/doc    # Mount documentation directory
       - ./backend/app:/app/app  # Mount backend code for development
+      - ./backend/tests:/app/tests  # Mount tests for development
     ports:
       - "4001:5000"  # Expose for direct access if needed
     networks:

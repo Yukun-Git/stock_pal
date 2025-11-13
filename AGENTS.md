@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 所有端口相关配置都要先参考 PORT_INFO.md，确保与现有服务不冲突。
+写详细设计文档的时候，不要包含具体的代码实现，以免文档过长。
 目前项目处于早期阶段，所有的详细设计和开发计划都不需要考虑数据迁移之类的内容。
 
 ## Project Structure & Module Organization

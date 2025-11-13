@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 对于重新构建镜像一定要谨慎，太费时间。大部分时候，能够通过重启服务就能达到目的。
 所有的端口设置一定要小心，绝不能和宿主机上的其他服务产生冲突（PORT_INFO.md）。
+写详细设计文档的时候，不要包含具体的代码实现，以免文档过长。
 目前项目处于早期阶段，所有的详细设计和开发计划都不需要考虑数据迁移之类的内容。
 
 ## Project Overview

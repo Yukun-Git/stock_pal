@@ -13,8 +13,9 @@ import {
   Spin,
   Typography,
   Input,
+  FloatButton,
 } from 'antd';
-import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Strategy, BacktestResponse } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
@@ -24,6 +25,8 @@ import EquityCurveChart from '@/components/EquityCurveChart';
 import StrategyDocModal from '@/components/StrategyDocModal';
 import { ParameterInput } from '@/components/parameters';
 import { SignalAnalysisCard } from '@/components/signalAnalysis';
+import MetricsCard from '@/components/MetricsCard';
+import { METRIC_TOOLTIPS, getMetricColor } from '@/utils/metricsConfig';
 
 const { Title, Text } = Typography;
 
@@ -207,11 +210,11 @@ export default function BacktestPage() {
     },
     {
       title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (type: string) => (
-        <Text strong style={{ color: type === 'buy' ? '#ff4d4f' : '#52c41a' }}>
-          {type === 'buy' ? '买入' : '卖出'}
+      dataIndex: 'action',  // 修复：后端返回的字段是 'action' 不是 'type'
+      key: 'action',
+      render: (action: string) => (
+        <Text strong style={{ color: action === 'buy' ? '#ff4d4f' : '#52c41a' }}>
+          {action === 'buy' ? '买入' : '卖出'}
         </Text>
       ),
     },
@@ -656,78 +659,159 @@ export default function BacktestPage() {
             </Card>
           )}
 
-          {/* Results Statistics */}
-          <Card title="📊 回测结果" style={{ marginTop: 24 }}>
-            <Row gutter={16}>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="总收益率"
-                  value={result.results.total_return}
-                  precision={2}
-                  suffix="%"
-                  valueStyle={{
-                    color: result.results.total_return >= 0 ? '#ff4d4f' : '#52c41a',
-                  }}
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="最终资金"
-                  value={result.results.final_capital}
-                  precision={2}
-                  prefix="¥"
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="交易次数"
-                  value={result.results.total_trades}
-                  suffix="次"
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="胜率"
-                  value={result.results.win_rate}
-                  precision={2}
-                  suffix="%"
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="最大回撤"
-                  value={Math.abs(result.results.max_drawdown)}
-                  precision={2}
-                  suffix="%"
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="盈利因子"
-                  value={result.results.profit_factor}
-                  precision={2}
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="平均盈利"
-                  value={result.results.avg_profit}
-                  precision={2}
-                  prefix="¥"
-                />
-              </Col>
-              <Col xs={12} sm={8} md={6}>
-                <Statistic
-                  title="平均亏损"
-                  value={Math.abs(result.results.avg_loss)}
-                  precision={2}
-                  prefix="¥"
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Col>
-            </Row>
-          </Card>
+          {/* 📊 收益指标 */}
+          <MetricsCard
+            title="收益指标"
+            icon="📊"
+            metrics={[
+              {
+                title: '总收益率',
+                value: result.results.total_return * 100,
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('total_return', result.results.total_return * 100) },
+                tooltip: METRIC_TOOLTIPS.total_return,
+              },
+              {
+                title: '年化收益率 (CAGR)',
+                value: (result.results.cagr || 0) * 100,
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('cagr', (result.results.cagr || 0) * 100) },
+                tooltip: METRIC_TOOLTIPS.cagr,
+              },
+              {
+                title: '最终资金',
+                value: result.results.final_capital,
+                precision: 2,
+                prefix: '¥',
+                tooltip: METRIC_TOOLTIPS.final_capital,
+              },
+              {
+                title: '平均交易收益',
+                value: (result.results.avg_trade_return || 0) * 100,
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('avg_trade_return', (result.results.avg_trade_return || 0) * 100) },
+                tooltip: METRIC_TOOLTIPS.avg_trade_return,
+              },
+            ]}
+            columns={4}
+          />
+
+          {/* ⚠️ 风险指标 */}
+          <MetricsCard
+            title="风险指标"
+            icon="⚠️"
+            metrics={[
+              {
+                title: '最大回撤',
+                value: Math.abs(result.results.max_drawdown * 100),
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('max_drawdown', result.results.max_drawdown * 100) },
+                tooltip: METRIC_TOOLTIPS.max_drawdown,
+              },
+              {
+                title: '回撤持续期',
+                value: result.results.max_drawdown_duration || 0,
+                precision: 0,
+                suffix: '天',
+                tooltip: METRIC_TOOLTIPS.max_drawdown_duration,
+              },
+              {
+                title: '波动率',
+                value: (result.results.volatility || 0) * 100,
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('volatility', (result.results.volatility || 0) * 100) },
+                tooltip: METRIC_TOOLTIPS.volatility,
+              },
+              {
+                title: '换手率',
+                value: result.results.turnover_rate || 0,
+                precision: 2,
+                suffix: 'x',
+                tooltip: METRIC_TOOLTIPS.turnover_rate,
+              },
+            ]}
+            columns={4}
+          />
+
+          {/* 🎯 风险调整收益 */}
+          <MetricsCard
+            title="风险调整收益"
+            icon="🎯"
+            metrics={[
+              {
+                title: 'Sharpe 比率',
+                value: result.results.sharpe_ratio || 0,
+                precision: 2,
+                valueStyle: { color: getMetricColor('sharpe_ratio', result.results.sharpe_ratio || 0) },
+                tooltip: METRIC_TOOLTIPS.sharpe_ratio,
+              },
+              {
+                title: 'Sortino 比率',
+                value: result.results.sortino_ratio || 0,
+                precision: 2,
+                valueStyle: { color: getMetricColor('sortino_ratio', result.results.sortino_ratio || 0) },
+                tooltip: METRIC_TOOLTIPS.sortino_ratio,
+              },
+              {
+                title: 'Calmar 比率',
+                value: result.results.calmar_ratio || 0,
+                precision: 2,
+                valueStyle: { color: getMetricColor('calmar_ratio', result.results.calmar_ratio || 0) },
+                tooltip: METRIC_TOOLTIPS.calmar_ratio,
+              },
+              {
+                title: '盈亏比',
+                value: result.results.profit_factor,
+                precision: 2,
+                valueStyle: { color: getMetricColor('profit_factor', result.results.profit_factor) },
+                tooltip: METRIC_TOOLTIPS.profit_factor,
+              },
+            ]}
+            columns={4}
+          />
+
+          {/* 📈 交易统计 */}
+          <MetricsCard
+            title="交易统计"
+            icon="📈"
+            metrics={[
+              {
+                title: '交易次数',
+                value: result.results.total_trades,
+                suffix: '次',
+                tooltip: METRIC_TOOLTIPS.total_trades,
+              },
+              {
+                title: '胜率',
+                value: result.results.win_rate * 100,
+                precision: 2,
+                suffix: '%',
+                valueStyle: { color: getMetricColor('win_rate', result.results.win_rate * 100) },
+                tooltip: METRIC_TOOLTIPS.win_rate,
+              },
+              {
+                title: '平均持仓天数',
+                value: result.results.avg_holding_period || 0,
+                precision: 1,
+                suffix: '天',
+                tooltip: METRIC_TOOLTIPS.avg_holding_period,
+              },
+              {
+                title: '平均盈利',
+                value: result.results.avg_profit,
+                precision: 2,
+                prefix: '¥',
+                valueStyle: { color: getMetricColor('avg_profit', result.results.avg_profit) },
+                tooltip: METRIC_TOOLTIPS.avg_profit,
+              },
+            ]}
+            columns={4}
+          />
 
           {/* Signal Analysis - Current Market Position */}
           {result.signal_analysis && (
@@ -763,6 +847,46 @@ export default function BacktestPage() {
               scroll={{ x: 800 }}
             />
           </Card>
+
+          {/* 元数据信息 */}
+          {result.metadata && (
+            <Card
+              title={
+                <span>
+                  <span style={{ marginRight: 8 }}>ℹ️</span>
+                  回测元数据
+                </span>
+              }
+              style={{ marginTop: 24, backgroundColor: '#fafafa' }}
+              size="small"
+            >
+              <Row gutter={16}>
+                <Col xs={24} sm={8}>
+                  <Statistic
+                    title="回测ID"
+                    value={result.metadata.backtest_id}
+                    valueStyle={{ fontSize: 14, color: '#1890ff' }}
+                  />
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Statistic
+                    title="引擎版本"
+                    value={result.metadata.engine_version}
+                    valueStyle={{ fontSize: 14, fontWeight: 600 }}
+                  />
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Statistic
+                    title="执行时间"
+                    value={result.metadata.execution_time_seconds}
+                    precision={3}
+                    suffix="秒"
+                    valueStyle={{ fontSize: 14, color: '#52c41a' }}
+                  />
+                </Col>
+              </Row>
+            </Card>
+          )}
         </>
       )}
         </Col>
@@ -773,6 +897,13 @@ export default function BacktestPage() {
         strategyId={currentDocStrategyId}
         open={docModalOpen}
         onClose={() => setDocModalOpen(false)}
+      />
+
+      {/* Back to Top Button */}
+      <FloatButton.BackTop
+        icon={<ArrowUpOutlined />}
+        tooltip="回到顶部"
+        visibilityHeight={300}
       />
     </div>
   );
