@@ -1,17 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
+import { Switch } from 'antd';
 import type { EquityPoint } from '@/types';
 import { formatCurrency } from '@/utils/format';
 
 interface EquityCurveChartProps {
   data: EquityPoint[];
   initialCapital: number;
+  comparisonData?: EquityPoint[];  // 新增：对比数据（无风控）
   height?: number;
 }
 
-export default function EquityCurveChart({ data, initialCapital, height = 300 }: EquityCurveChartProps) {
+export default function EquityCurveChart({ data, initialCapital, comparisonData, height = 300 }: EquityCurveChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [showComparison, setShowComparison] = useState(true);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
@@ -26,6 +29,17 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
     const equityData = data.map(item => item.equity);
     const benchmarkData = data.map(() => initialCapital);
 
+    // Prepare comparison data if available
+    const comparisonEquityData = comparisonData && showComparison
+      ? comparisonData.map(item => item.equity)
+      : [];
+
+    // Build legend data
+    const legendData = ['资产曲线（有风控）', '本金'];
+    if (comparisonData && showComparison) {
+      legendData.push('资产曲线（无风控）');
+    }
+
     const option = {
       backgroundColor: '#fff',
       tooltip: {
@@ -34,18 +48,33 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
           type: 'cross',
         },
         formatter: (params: any) => {
-          const equity = params[0];
-          const benchmark = params[1];
-          return `
-            日期: ${dates[equity.dataIndex]}<br/>
-            资产: ${formatCurrency(equity.value)}<br/>
-            本金: ${formatCurrency(benchmark.value)}<br/>
-            收益: ${formatCurrency(equity.value - benchmark.value)}
-          `;
+          let result = `日期: ${dates[params[0].dataIndex]}<br/>`;
+
+          params.forEach((param: any) => {
+            if (param.seriesName === '资产曲线（有风控）') {
+              result += `有风控: ${formatCurrency(param.value)}<br/>`;
+            } else if (param.seriesName === '资产曲线（无风控）') {
+              result += `无风控: ${formatCurrency(param.value)}<br/>`;
+            } else if (param.seriesName === '本金') {
+              result += `本金: ${formatCurrency(param.value)}<br/>`;
+            }
+          });
+
+          // Calculate difference if comparison data exists
+          if (params.length >= 2 && comparisonData && showComparison) {
+            const withRisk = params.find((p: any) => p.seriesName === '资产曲线（有风控）');
+            const withoutRisk = params.find((p: any) => p.seriesName === '资产曲线（无风控）');
+            if (withRisk && withoutRisk) {
+              const diff = withRisk.value - withoutRisk.value;
+              result += `<br/>差异: ${formatCurrency(diff)} (${diff >= 0 ? '+' : ''}${((diff / withoutRisk.value) * 100).toFixed(2)}%)`;
+            }
+          }
+
+          return result;
         },
       },
       legend: {
-        data: ['资产曲线', '本金'],
+        data: legendData,
         top: 10,
       },
       grid: {
@@ -73,7 +102,7 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
       },
       series: [
         {
-          name: '资产曲线',
+          name: '资产曲线（有风控）',
           type: 'line',
           data: equityData,
           smooth: true,
@@ -95,8 +124,24 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
           lineStyle: {
             type: 'dashed',
             color: '#bfbfbf',
+            width: 1,
           },
         },
+        ...(comparisonData && showComparison
+          ? [
+              {
+                name: '资产曲线（无风控）',
+                type: 'line',
+                data: comparisonEquityData,
+                smooth: true,
+                lineStyle: {
+                  width: 2,
+                  type: 'dashed' as const,
+                  color: '#ff7875',
+                },
+              },
+            ]
+          : []),
       ],
     };
 
@@ -110,7 +155,7 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [data, initialCapital]);
+  }, [data, initialCapital, comparisonData, showComparison]);
 
   useEffect(() => {
     return () => {
@@ -121,5 +166,19 @@ export default function EquityCurveChart({ data, initialCapital, height = 300 }:
     };
   }, []);
 
-  return <div ref={chartRef} style={{ width: '100%', height: `${height}px` }} />;
+  return (
+    <div style={{ position: 'relative' }}>
+      {comparisonData && (
+        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }}>
+          <Switch
+            checked={showComparison}
+            onChange={setShowComparison}
+            checkedChildren="显示对比"
+            unCheckedChildren="隐藏对比"
+          />
+        </div>
+      )}
+      <div ref={chartRef} style={{ width: '100%', height: `${height}px` }} />
+    </div>
+  );
 }

@@ -21,6 +21,7 @@ from .models import (
 )
 from .matching_engine import MatchingEngine
 from .rules.validator import TradingRulesValidator
+from .risk_manager import RiskManager, RiskConfig
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ class TradingEngine:
         commission_rate: float = 0.0003,
         min_commission: float = 5.0,
         slippage_bps: float = 5.0,
-        stamp_tax_rate: float = 0.001
+        stamp_tax_rate: float = 0.001,
+        risk_config: Optional[RiskConfig] = None
     ):
         """
         初始化交易引擎
@@ -56,6 +58,7 @@ class TradingEngine:
             min_commission: 最低手续费
             slippage_bps: 滑点（基点）
             stamp_tax_rate: 印花税率
+            risk_config: 风控配置（可选）
         """
         self.environment = environment
         self.initial_capital = initial_capital
@@ -73,6 +76,17 @@ class TradingEngine:
         # 权益曲线（日期 -> 权益）
         self.equity_history: Dict[datetime, float] = {}
 
+        # 风控元数据
+        self.metadata: Dict[str, List] = {
+            'risk_events': [],  # 风控事件列表
+            'risk_stats': {     # 风控统计
+                'stop_loss_count': 0,
+                'stop_profit_count': 0,
+                'drawdown_protection_count': 0,
+                'rejected_orders_count': 0
+            }
+        }
+
         # 规则验证器
         self.validator = TradingRulesValidator(environment)
 
@@ -85,9 +99,15 @@ class TradingEngine:
             stamp_tax_rate=stamp_tax_rate
         )
 
+        # 风控管理器（可选）
+        self.risk_manager: Optional[RiskManager] = None
+        if risk_config:
+            self.risk_manager = RiskManager(risk_config, initial_capital)
+            logger.info(f"RiskManager enabled with config: {risk_config}")
+
         logger.info(
             f"TradingEngine initialized: capital={initial_capital}, "
-            f"env={environment}"
+            f"env={environment}, risk_enabled={risk_config is not None}"
         )
 
     def process_signal(
@@ -100,12 +120,11 @@ class TradingEngine:
         处理交易信号
 
         完整流程：
-        1. 解析信号
-        2. 生成订单
-        3. 验证订单
-        4. 撮合订单
-        5. 更新持仓
-        6. 记录权益
+        1. 更新持仓价格
+        2. 检查风控退出信号（止损/止盈/回撤保护）
+        3. 解析策略信号
+        4. 生成并执行订单
+        5. 记录权益
 
         Args:
             signal: 交易信号
@@ -115,13 +134,28 @@ class TradingEngine:
         Returns:
             Trade: 成交记录（如果成交），否则返回 None
         """
-        # 更新持仓的当前价格
+        # 1. 更新持仓的当前价格
         self._update_position_prices(market_data)
 
-        # 记录当日权益
+        # 2. 检查风控退出信号（优先级最高）
+        if self.risk_manager:
+            forced_orders = self.risk_manager.check_exit_signals(
+                portfolio=self._get_portfolio_dict(),
+                current_data={market_data.symbol: market_data.close}
+            )
+
+            # 执行强制退出订单
+            for forced_order in forced_orders:
+                self._execute_forced_order(forced_order, market_data, current_date)
+
+        # 3. 记录当日权益
         self.equity_history[current_date] = self.portfolio.total_equity
 
-        # 解析信号
+        # 更新峰值权益（用于回撤保护）
+        if self.risk_manager:
+            self.risk_manager.update_peak_equity(self.portfolio.total_equity)
+
+        # 4. 解析策略信号
         if signal.action == 0:
             # 持有信号，不操作
             return None
@@ -178,6 +212,39 @@ class TradingEngine:
             logger.debug(f"Cannot afford to buy {signal.symbol}")
             return None
 
+        # 风控检查（在生成订单后、执行前）
+        if self.risk_manager:
+            order_dict = {
+                'symbol': signal.symbol,
+                'shares': quantity,
+                'price': signal.price
+            }
+            risk_result = self.risk_manager.check_order_risk(
+                order=order_dict,
+                portfolio=self._get_portfolio_dict()
+            )
+
+            if not risk_result.passed:
+                # 订单被风控拒绝
+                logger.info(
+                    f"Order rejected by risk manager: {risk_result.reason}"
+                )
+                # 记录风控事件
+                self._record_risk_event(
+                    date=current_date,
+                    event_type='order_rejected',
+                    symbol=signal.symbol,
+                    reason=risk_result.reason,
+                    details={
+                        'intended_shares': quantity,
+                        'price': signal.price,
+                        'intended_value': quantity * signal.price
+                    }
+                )
+                # 更新风控统计
+                self.metadata['risk_stats']['rejected_orders_count'] += 1
+                return None
+
         # 生成买入订单
         order = Order(
             order_id=self._generate_order_id(),
@@ -233,7 +300,8 @@ class TradingEngine:
         self,
         order: Order,
         market_data: MarketData,
-        current_date: datetime
+        current_date: datetime,
+        reason: str = 'strategy'
     ) -> Optional[Trade]:
         """
         执行订单
@@ -247,6 +315,7 @@ class TradingEngine:
             order: 订单
             market_data: 市场数据
             current_date: 当前日期
+            reason: 交易原因（默认为'strategy'）
 
         Returns:
             Trade: 成交记录（如果成交）
@@ -267,8 +336,8 @@ class TradingEngine:
             self.orders.append(order)
             return None
 
-        # 2. 撮合订单
-        trade = self.matching_engine.match_order(order, market_data)
+        # 2. 撮合订单（传递reason参数）
+        trade = self.matching_engine.match_order(order, market_data, reason=reason)
 
         if trade is None:
             logger.info(f"Order {order.order_id} cannot be matched")
@@ -417,6 +486,150 @@ class TradingEngine:
             'total_return_pct': self.get_total_return() * 100,
         }
 
+    # ========== 风控辅助方法 ==========
+
+    def _get_portfolio_dict(self) -> Dict[str, any]:
+        """
+        将Portfolio对象转换为字典格式（供RiskManager使用）
+
+        Returns:
+            Dict: Portfolio字典
+        """
+        # 构建持仓字典
+        positions_dict = {}
+        for symbol, position in self.portfolio.positions.items():
+            positions_dict[symbol] = {
+                'shares': position.quantity,
+                'cost_price': position.avg_cost,
+                'current_price': position.current_price,
+                'market_value': position.market_value
+            }
+
+        # 构建当前价格字典
+        current_prices = {
+            symbol: pos.current_price
+            for symbol, pos in self.portfolio.positions.items()
+        }
+
+        return {
+            'total_equity': self.portfolio.total_equity,
+            'cash': self.portfolio.cash,
+            'positions': positions_dict,
+            'current_prices': current_prices
+        }
+
+    def _execute_forced_order(
+        self,
+        forced_order,  # ForcedOrder类型
+        market_data: MarketData,
+        current_date: datetime
+    ) -> Optional[Trade]:
+        """
+        执行风控强制订单
+
+        Args:
+            forced_order: 强制订单（ForcedOrder对象）
+            market_data: 市场数据
+            current_date: 当前日期
+
+        Returns:
+            Trade: 成交记录（如果成交）
+        """
+        # 检查是否持有该股票
+        position = self.portfolio.get_position(forced_order.symbol)
+        if not position:
+            logger.warning(f"No position in {forced_order.symbol}, skip forced order")
+            return None
+
+        # 生成强制卖出订单
+        order = Order(
+            order_id=self._generate_order_id(),
+            symbol=forced_order.symbol,
+            side=OrderSide.SELL,
+            quantity=forced_order.shares,
+            limit_price=forced_order.trigger_price,
+            created_at=current_date,
+            status=OrderStatus.PENDING
+        )
+
+        # 执行订单（传递风控原因）
+        trade = self._execute_order(order, market_data, current_date, reason=forced_order.reason)
+
+        if trade:
+            # 记录风控事件
+            self._record_risk_event(
+                date=current_date,
+                event_type='forced_exit',
+                symbol=forced_order.symbol,
+                reason=forced_order.reason,
+                details={
+                    'trigger_price': forced_order.trigger_price,
+                    'cost_price': forced_order.cost_price,
+                    'pnl_pct': forced_order.pnl_pct,
+                    'shares': forced_order.shares
+                }
+            )
+
+            # 更新风控统计
+            if forced_order.reason == 'stop_loss':
+                self.metadata['risk_stats']['stop_loss_count'] += 1
+            elif forced_order.reason == 'stop_profit':
+                self.metadata['risk_stats']['stop_profit_count'] += 1
+            elif forced_order.reason == 'drawdown_protection':
+                self.metadata['risk_stats']['drawdown_protection_count'] += 1
+
+            logger.info(
+                f"Forced order executed: {forced_order.reason} - "
+                f"{forced_order.symbol} @ {forced_order.trigger_price:.2f}"
+            )
+
+        return trade
+
+    def _record_risk_event(
+        self,
+        date: datetime,
+        event_type: str,
+        symbol: str,
+        reason: str,
+        details: Dict[str, any]
+    ):
+        """
+        记录风控事件
+
+        Args:
+            date: 事件日期
+            event_type: 事件类型（'order_rejected' / 'forced_exit'）
+            symbol: 股票代码
+            reason: 触发原因
+            details: 详细信息
+        """
+        from .risk_manager import RiskEvent
+
+        event = RiskEvent(
+            date=date.strftime('%Y-%m-%d'),
+            event_type=event_type,
+            symbol=symbol,
+            reason=reason,
+            details=details,
+            timestamp=datetime.now().isoformat()
+        )
+
+        self.metadata['risk_events'].append(event.__dict__)
+
+        logger.debug(f"Risk event recorded: {event_type} - {symbol} - {reason}")
+
+    def get_risk_stats(self) -> Dict[str, any]:
+        """
+        获取风控统计信息
+
+        Returns:
+            Dict: 风控统计
+        """
+        return {
+            'risk_stats': self.metadata['risk_stats'],
+            'risk_events': self.metadata['risk_events']
+        }
+
     def __repr__(self) -> str:
         return (
             f"TradingEngine(env={self.environment}, "
@@ -424,3 +637,4 @@ class TradingEngine:
             f"equity={self.portfolio.total_equity:.2f}, "
             f"trades={len(self.trades)})"
         )
+

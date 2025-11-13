@@ -48,6 +48,7 @@ export interface Trade {
   capital: number;
   profit?: number;
   profit_pct?: number;
+  reason?: string;  // 新增：退出原因（strategy_signal, stop_loss, stop_profit, drawdown_protection）
 }
 
 export interface EquityPoint {
@@ -88,6 +89,9 @@ export interface BacktestResult {
   avg_trade_return?: number;          // 平均交易收益率
   avg_holding_period?: number;        // 平均持仓天数
   turnover_rate?: number;             // 换手率（年化）
+
+  // ===== 风控统计 =====
+  risk_stats?: RiskStats;             // 风控统计数据
 }
 
 export interface BacktestRequest {
@@ -126,6 +130,7 @@ export interface BacktestMetadata {
   execution_time_seconds: number;    // 执行时间（秒）
   environment?: string;              // 交易环境
   started_at?: string;               // 开始时间
+  risk_events?: RiskEvent[];         // 新增：风控事件列表
 }
 
 export interface BacktestResponse {
@@ -144,3 +149,58 @@ export interface BacktestResponse {
   signal_analysis?: SignalAnalysis;
   metadata?: BacktestMetadata;       // 新增：元数据
 }
+
+// ===== 风控管理相关类型 =====
+
+/**
+ * 风控配置
+ */
+export interface RiskConfig {
+  // 止损止盈
+  stop_loss_pct?: number | null;         // 止损百分比（如0.1表示-10%）
+  stop_profit_pct?: number | null;       // 止盈百分比（如0.2表示+20%）
+
+  // 仓位控制
+  max_position_pct: number;              // 单票最大仓位（如0.3表示30%）
+  max_total_exposure: number;            // 总仓位上限（如0.95表示95%）
+
+  // 组合风控
+  max_drawdown_pct?: number | null;      // 最大回撤保护（如0.2表示20%）
+}
+
+/**
+ * 风控模板类型
+ */
+export type RiskTemplate = 'conservative' | 'balanced' | 'aggressive' | 'custom' | null;
+
+/**
+ * 风控统计
+ */
+export interface RiskStats {
+  stop_loss_count: number;               // 止损触发次数
+  stop_profit_count: number;             // 止盈触发次数
+  drawdown_protection_count: number;     // 回撤保护触发次数
+  rejected_orders_count: number;         // 拒绝订单次数
+  stop_loss_saved_loss?: number;         // 止损避免的额外亏损
+  stop_profit_locked_profit?: number;    // 止盈锁定的收益
+  drawdown_protection_saved_loss?: number; // 回撤保护避免的亏损
+}
+
+/**
+ * 风控事件类型
+ */
+export type RiskEventType = 'stop_loss' | 'stop_profit' | 'drawdown_protection' | 'rejected_order';
+
+/**
+ * 风控事件
+ */
+export interface RiskEvent {
+  date: string;                          // 事件日期
+  type: RiskEventType;                   // 事件类型
+  symbol?: string;                       // 股票代码
+  price?: number;                        // 触发价格
+  cost_price?: number;                   // 成本价格
+  reason: string;                        // 触发原因
+  details?: Record<string, any>;         // 额外详情
+}
+

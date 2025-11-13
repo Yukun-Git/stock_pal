@@ -62,7 +62,8 @@ class MatchingEngine:
         self,
         order: Order,
         market_data: MarketData,
-        stock_info: Optional[StockInfo] = None
+        stock_info: Optional[StockInfo] = None,
+        reason: Optional[str] = None
     ) -> Optional[Trade]:
         """
         撮合订单
@@ -71,6 +72,7 @@ class MatchingEngine:
             order: 订单
             market_data: 市场数据
             stock_info: 股票信息
+            reason: 交易原因（可选）：'strategy' / 'stop_loss' / 'stop_profit' / 'drawdown_protection'
 
         Returns:
             Trade: 成交记录，如果无法成交则返回 None
@@ -108,7 +110,8 @@ class MatchingEngine:
             commission=commission_detail.total,
             stamp_tax=commission_detail.stamp_tax,
             slippage=slippage_amount,
-            executed_at=market_data.date
+            executed_at=market_data.date,
+            reason=reason  # 添加交易原因
         )
 
         logger.info(

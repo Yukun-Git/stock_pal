@@ -149,6 +149,7 @@ class Trade:
     stamp_tax: float = 0.0    # 印花税
     slippage: float = 0.0     # 滑点金额
     executed_at: datetime = None
+    reason: Optional[str] = None  # 交易原因：'strategy'（策略信号）/ 'stop_loss'（止损）/ 'stop_profit'（止盈）/ 'drawdown_protection'（回撤保护）
 
     def __post_init__(self):
         if self.executed_at is None:

@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
-import type { KLine } from '@/types';
+import type { KLine, RiskEvent } from '@/types';
 
 interface KLineChartProps {
   data: KLine[];
   buyPoints?: Array<{ date: string; price: number }>;
   sellPoints?: Array<{ date: string; price: number }>;
+  riskEvents?: RiskEvent[];  // 新增：风控事件
   height?: number;
 }
 
-export default function KLineChart({ data, buyPoints = [], sellPoints = [], height = 500 }: KLineChartProps) {
+export default function KLineChart({ data, buyPoints = [], sellPoints = [], riskEvents = [], height = 500 }: KLineChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -28,18 +29,46 @@ export default function KLineChart({ data, buyPoints = [], sellPoints = [], heig
     const klineData = data.map(item => [item.open, item.close, item.low, item.high]);
     const volumes = data.map(item => item.volume);
 
-    // Prepare buy/sell markers
+    // Prepare buy/sell markers (strategy signals)
     const buyMarkers = buyPoints.map(point => ({
       coord: [point.date, point.price],
       value: '买',
-      itemStyle: { color: '#ff4d4f' },
+      itemStyle: { color: '#52c41a' },
+      symbolSize: 60,
     }));
 
     const sellMarkers = sellPoints.map(point => ({
       coord: [point.date, point.price],
       value: '卖',
-      itemStyle: { color: '#52c41a' },
+      itemStyle: { color: '#1890ff' },
+      symbolSize: 60,
     }));
+
+    // Prepare risk event markers
+    const riskEventMarkers = riskEvents.map(event => {
+      const config: Record<string, { symbol: string; color: string; label: string }> = {
+        stop_loss: { symbol: 'pin', color: '#fa8c16', label: '止损' },
+        stop_profit: { symbol: 'pin', color: '#faad14', label: '止盈' },
+        drawdown_protection: { symbol: 'pin', color: '#f5222d', label: '回撤' },
+        rejected_order: { symbol: 'circle', color: '#d9d9d9', label: '拒绝' },
+      };
+
+      const eventConfig = config[event.type] || config.rejected_order;
+
+      return {
+        coord: [event.date, event.price || 0],
+        value: eventConfig.label,
+        symbol: eventConfig.symbol,
+        itemStyle: { color: eventConfig.color },
+        symbolSize: 50,
+        label: {
+          show: true,
+          formatter: eventConfig.label,
+          color: '#fff',
+          fontSize: 10,
+        },
+      };
+    });
 
     // Chart options
     const option = {
@@ -158,8 +187,7 @@ export default function KLineChart({ data, buyPoints = [], sellPoints = [], heig
             label: {
               formatter: (param: any) => param.value,
             },
-            data: [...buyMarkers, ...sellMarkers],
-            symbolSize: 60,
+            data: [...buyMarkers, ...sellMarkers, ...riskEventMarkers],
           },
         },
         {
@@ -189,7 +217,7 @@ export default function KLineChart({ data, buyPoints = [], sellPoints = [], heig
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [data, buyPoints, sellPoints]);
+  }, [data, buyPoints, sellPoints, riskEvents]);
 
   useEffect(() => {
     return () => {

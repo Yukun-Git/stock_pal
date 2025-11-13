@@ -14,10 +14,11 @@ import {
   Typography,
   Input,
   FloatButton,
+  Tag,
 } from 'antd';
 import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { Strategy, BacktestResponse } from '@/types';
+import type { Strategy, BacktestResponse, RiskConfig } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
 import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
@@ -26,6 +27,11 @@ import StrategyDocModal from '@/components/StrategyDocModal';
 import { ParameterInput } from '@/components/parameters';
 import { SignalAnalysisCard } from '@/components/signalAnalysis';
 import MetricsCard from '@/components/MetricsCard';
+import RiskConfigPanel from '@/components/RiskConfigPanel';
+import RiskImpactCard from '@/components/RiskImpactCard';
+import RiskComparisonDrawer from '@/components/RiskComparisonDrawer';
+import RiskHelpDrawer from '@/components/RiskHelpDrawer';
+import RiskOnboarding, { shouldShowOnboarding } from '@/components/RiskOnboarding';
 import { METRIC_TOOLTIPS, getMetricColor } from '@/utils/metricsConfig';
 
 const { Title, Text } = Typography;
@@ -73,6 +79,19 @@ export default function BacktestPage() {
   const [strategySearch, setStrategySearch] = useState('');
   const [docModalOpen, setDocModalOpen] = useState(false);
   const [currentDocStrategyId, setCurrentDocStrategyId] = useState<string | null>(null);
+  const [riskConfig, setRiskConfig] = useState<RiskConfig | null>({
+    stop_loss_pct: 0.10,
+    stop_profit_pct: 0.20,
+    max_drawdown_pct: 0.20,
+    max_position_pct: 0.30,
+    max_total_exposure: 0.95,
+  });
+  const [comparisonDrawerOpen, setComparisonDrawerOpen] = useState(false);
+  const [comparisonResult, setComparisonResult] = useState<BacktestResponse | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [helpDrawerOpen, setHelpDrawerOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding());
+  const [lastRequestData, setLastRequestData] = useState<any>(null);  // 保存最后的请求数据
 
   // Load strategies on mount
   useEffect(() => {
@@ -117,6 +136,40 @@ export default function BacktestPage() {
     }
 
     setSelectedStrategies(newSelected);
+  };
+
+  // 处理查看对比功能
+  const handleViewComparison = async () => {
+    // 如果已经有对比结果，直接打开抽屉
+    if (comparisonResult) {
+      setComparisonDrawerOpen(true);
+      return;
+    }
+
+    // 如果没有对比结果，自动发起无风控回测
+    if (!lastRequestData || !result) {
+      message.warning('请先完成一次回测');
+      return;
+    }
+
+    setComparisonLoading(true);
+    setComparisonDrawerOpen(true);
+
+    try {
+      // 发起无风控回测
+      const comparisonRequestData = {
+        ...lastRequestData,
+        risk_config: null,  // 不启用风控
+      };
+
+      const response = await backtestApi.runBacktest(comparisonRequestData);
+      setComparisonResult(response);
+      message.success('对比回测完成！');
+    } catch (error: any) {
+      message.error('对比回测失败：' + (error?.response?.data?.error || '请稍后重试'));
+    } finally {
+      setComparisonLoading(false);
+    }
   };
 
   const handleSubmit = async (values: any) => {
@@ -169,6 +222,7 @@ export default function BacktestPage() {
         initial_capital: values.initialCapital,
         commission_rate: values.commissionRate,
         per_strategy_params,
+        risk_config: riskConfig,  // 添加风控配置
       };
 
       // Use strategy_ids for multiple strategies, strategy_id for single
@@ -194,6 +248,8 @@ export default function BacktestPage() {
       console.log('=============================');
 
       setResult(response);
+      setLastRequestData(requestData);  // 保存请求数据，用于对比功能
+      setComparisonResult(null);  // 清空之前的对比结果
       message.success('回测完成！');
     } catch (error: any) {
       message.error(error?.response?.data?.error || '回测失败，请检查参数');
@@ -264,6 +320,29 @@ export default function BacktestPage() {
           <Text style={{ color: pct >= 0 ? '#ff4d4f' : '#52c41a' }}>
             {formatPercent(pct)}
           </Text>
+        );
+      },
+    },
+    {
+      title: '退出原因',
+      dataIndex: 'reason',
+      key: 'reason',
+      render: (reason: string, record: any) => {
+        if (!reason || record.action === 'buy') return '-';
+
+        const reasonMap: Record<string, { text: string; icon: string; color: string }> = {
+          strategy_signal: { text: '策略信号', icon: '', color: 'blue' },
+          stop_loss: { text: '止损', icon: '🛑', color: 'orange' },
+          stop_profit: { text: '止盈', icon: '💰', color: 'gold' },
+          drawdown_protection: { text: '回撤保护', icon: '⚠️', color: 'red' },
+        };
+
+        const info = reasonMap[reason] || { text: reason, icon: '', color: 'default' };
+        return (
+          <Tag color={info.color}>
+            {info.icon && <span style={{ marginRight: 4 }}>{info.icon}</span>}
+            {info.text}
+          </Tag>
         );
       },
     },
@@ -558,6 +637,17 @@ export default function BacktestPage() {
             </Row>
           )}
 
+          {/* 风控配置面板 */}
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            <Col span={24}>
+              <RiskConfigPanel
+                value={riskConfig}
+                onChange={setRiskConfig}
+                onOpenHelp={() => setHelpDrawerOpen(true)}
+              />
+            </Col>
+          </Row>
+
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item label="初始资金" name="initialCapital">
@@ -818,12 +908,21 @@ export default function BacktestPage() {
             <SignalAnalysisCard signalAnalysis={result.signal_analysis} />
           )}
 
+          {/* Risk Impact Card - Show if risk management is enabled */}
+          {result.results.risk_stats && (
+            <RiskImpactCard
+              riskStats={result.results.risk_stats}
+              onViewComparison={handleViewComparison}
+            />
+          )}
+
           {/* K-Line Chart */}
           <Card title="K线图与买卖点" style={{ marginTop: 24 }}>
             <KLineChart
               data={result.klines}
               buyPoints={result.buy_points}
               sellPoints={result.sell_points}
+              riskEvents={result.metadata?.risk_events}
               height={500}
             />
           </Card>
@@ -833,6 +932,7 @@ export default function BacktestPage() {
             <EquityCurveChart
               data={result.equity_curve}
               initialCapital={result.results.initial_capital}
+              comparisonData={comparisonResult?.equity_curve}
               height={300}
             />
           </Card>
@@ -898,6 +998,31 @@ export default function BacktestPage() {
         open={docModalOpen}
         onClose={() => setDocModalOpen(false)}
       />
+
+      {/* Risk Comparison Drawer */}
+      {result && (
+        <RiskComparisonDrawer
+          open={comparisonDrawerOpen}
+          onClose={() => setComparisonDrawerOpen(false)}
+          withRiskResult={result.results}
+          withoutRiskResult={comparisonResult?.results}
+          riskEvents={result.metadata?.risk_events}
+        />
+      )}
+
+      {/* Risk Help Drawer */}
+      <RiskHelpDrawer
+        open={helpDrawerOpen}
+        onClose={() => setHelpDrawerOpen(false)}
+      />
+
+      {/* Risk Onboarding */}
+      {showOnboarding && (
+        <RiskOnboarding
+          onComplete={() => setShowOnboarding(false)}
+          skip={!showOnboarding}
+        />
+      )}
 
       {/* Back to Top Button */}
       <FloatButton.BackTop

@@ -9,6 +9,7 @@
 | ID | 功能名称 | 优先级 | 预估工作量 | 状态 | 创建日期 |
 |----|---------|--------|-----------|------|---------|
 | BL-001 | [回测结果存储与历史查询](./backtest_history_storage.md) | Medium | 3-5天 | Backlog | 2025-11-12 |
+| BL-002 | [企业商誉量化与舆情监测](./enterprise_reputation_quantification.md) | Low | 10-15天 | Backlog | 2025-11-13 |
 
 ---
 

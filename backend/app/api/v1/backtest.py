@@ -14,6 +14,7 @@ from app.services.signal_analysis_service import SignalAnalysisService
 # 新回测引擎
 from app.backtest.orchestrator import BacktestOrchestrator
 from app.backtest.models import BacktestConfig, StockInfo
+from app.backtest.risk_manager import RiskConfig
 from app.backtest.optimization import GridSearchOptimizer
 
 
@@ -213,8 +214,20 @@ class BacktestResource(Resource):
                 strategy_params=strategy_params
             )
 
+            # Parse risk config (optional)
+            risk_config = None
+            if 'risk_config' in data:
+                risk_params = data['risk_config']
+                try:
+                    risk_config = RiskConfig(**risk_params)
+                except Exception as e:
+                    return {
+                        'success': False,
+                        'error': f'Invalid risk_config: {str(e)}'
+                    }, 400
+
             # Run backtest with new engine
-            orchestrator = BacktestOrchestrator(config)
+            orchestrator = BacktestOrchestrator(config, risk_config=risk_config)
 
             # Debug: Check environment initialization
             if orchestrator.environment is None:
@@ -242,7 +255,8 @@ class BacktestResource(Resource):
                     'price': float(trade.price),
                     'shares': int(trade.quantity),
                     'amount': float(trade.amount),
-                    'commission': float(trade.commission)
+                    'commission': float(trade.commission),
+                    'reason': trade.reason if trade.reason else 'strategy'  # 交易原因
                 })
 
             # Convert equity curve to API format

@@ -19,6 +19,7 @@ from .models import (
     StockInfo
 )
 from .trading_engine import TradingEngine
+from .risk_manager import RiskConfig
 from .metrics import MetricsCalculator
 from .rules.trading_calendar import TradingCalendar
 from .rules.symbol_classifier import SymbolClassifier
@@ -34,14 +35,16 @@ class BacktestOrchestrator:
     3. 聚合结果
     """
 
-    def __init__(self, config: BacktestConfig):
+    def __init__(self, config: BacktestConfig, risk_config: Optional[RiskConfig] = None):
         """
         初始化编排器
 
         Args:
             config: 回测配置
+            risk_config: 风控配置（可选）
         """
         self.config = config
+        self.risk_config = risk_config
         self.backtest_id = self._generate_backtest_id()
 
         # 初始化交易日历
@@ -57,7 +60,8 @@ class BacktestOrchestrator:
             commission_rate=config.commission_rate,
             min_commission=config.min_commission,
             slippage_bps=config.slippage_bps,
-            stamp_tax_rate=config.stamp_tax_rate
+            stamp_tax_rate=config.stamp_tax_rate,
+            risk_config=risk_config  # 传递风控配置
         )
 
         # 指标计算器
@@ -69,6 +73,7 @@ class BacktestOrchestrator:
             'engine_version': config.engine_version,
             'environment': str(self.environment),
             'started_at': datetime.now().isoformat(),
+            'risk_enabled': risk_config is not None
         }
 
     def _generate_backtest_id(self) -> str:
@@ -206,6 +211,12 @@ class BacktestOrchestrator:
             'total_orders': len(self.trading_engine.orders),
             'total_trades': len(self.trading_engine.trades),
         })
+
+        # 如果启用了风控，添加风控统计
+        if self.risk_config is not None:
+            risk_stats = self.trading_engine.get_risk_stats()
+            self.metadata['risk_stats'] = risk_stats['risk_stats']
+            self.metadata['risk_events'] = risk_stats['risk_events']
 
         # 构建结果
         result = BacktestResult(
