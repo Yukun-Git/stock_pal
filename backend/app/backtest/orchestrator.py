@@ -23,6 +23,7 @@ from .risk_manager import RiskConfig
 from .metrics import MetricsCalculator
 from .rules.trading_calendar import TradingCalendar
 from .rules.symbol_classifier import SymbolClassifier
+from app.services.benchmark_service import BenchmarkService
 
 
 class BacktestOrchestrator:
@@ -105,7 +106,8 @@ class BacktestOrchestrator:
         self,
         market_data: pd.DataFrame,
         signals: pd.DataFrame,
-        stock_info: Optional[StockInfo] = None
+        stock_info: Optional[StockInfo] = None,
+        benchmark_id: Optional[str] = None
     ) -> BacktestResult:
         """
         运行回测
@@ -119,6 +121,7 @@ class BacktestOrchestrator:
                 - date: 日期
                 - signal: 信号 (1=买入, -1=卖出, 0=持有)
             stock_info: 股票信息（可选）
+            benchmark_id: 基准指数ID（可选，如'CSI300'）
 
         Returns:
             BacktestResult: 回测结果
@@ -192,10 +195,48 @@ class BacktestOrchestrator:
         # 将 DataFrame 转换为 Series（用于指标计算）
         equity_curve_series = equity_curve_df.set_index('date')['equity']
 
+        # 获取基准数据（如果提供了 benchmark_id）
+        benchmark_returns = None
+        benchmark_data = None
+        if benchmark_id:
+            try:
+                # 获取日期范围
+                start_date = df['date'].min().strftime('%Y%m%d')
+                end_date = df['date'].max().strftime('%Y%m%d')
+
+                # 获取基准数据
+                benchmark_df = BenchmarkService.get_benchmark_data(
+                    benchmark_id=benchmark_id,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+                # 计算基准收益率
+                benchmark_returns = BenchmarkService.calculate_benchmark_returns(benchmark_df)
+
+                # 计算基准权益曲线
+                benchmark_equity_df = BenchmarkService.calculate_benchmark_equity(
+                    benchmark_df,
+                    initial_capital=self.config.initial_capital
+                )
+
+                # 保存基准数据用于返回
+                benchmark_data = {
+                    'benchmark_id': benchmark_id,
+                    'benchmark_name': BenchmarkService.BENCHMARK_MAP[benchmark_id]['name'],
+                    'equity_curve': benchmark_equity_df,
+                    'data': benchmark_df
+                }
+            except Exception as e:
+                # 基准数据获取失败，记录警告但继续回测
+                import logging
+                logging.warning(f"Failed to fetch benchmark data: {str(e)}")
+
         # 计算性能指标
         metrics = self.metrics_calculator.calculate_all_metrics(
             equity_curve=equity_curve_series,
-            trades=self.trading_engine.trades
+            trades=self.trading_engine.trades,
+            benchmark_returns=benchmark_returns
         )
 
         # 记录结束时间
@@ -218,6 +259,13 @@ class BacktestOrchestrator:
             self.metadata['risk_stats'] = risk_stats['risk_stats']
             self.metadata['risk_events'] = risk_stats['risk_events']
 
+        # 添加基准数据到元数据
+        if benchmark_data:
+            self.metadata['benchmark'] = {
+                'id': benchmark_data['benchmark_id'],
+                'name': benchmark_data['benchmark_name']
+            }
+
         # 构建结果
         result = BacktestResult(
             config=self.config,
@@ -227,6 +275,12 @@ class BacktestOrchestrator:
             metadata=self.metadata,
             created_at=start_time
         )
+
+        # 将基准数据附加到结果（使用自定义属性）
+        if benchmark_data:
+            result.benchmark_equity = benchmark_data['equity_curve']
+            result.benchmark_name = benchmark_data['benchmark_name']
+            result.benchmark_id = benchmark_data['benchmark_id']
 
         return result
 

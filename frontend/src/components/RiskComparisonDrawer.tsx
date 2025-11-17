@@ -1,4 +1,4 @@
-import { Drawer, Table, Typography, Divider, Row, Col, Statistic, Timeline, Tag } from 'antd';
+import { Drawer, Table, Typography, Divider,  Timeline, Tag } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import type { BacktestResult, RiskEvent } from '@/types';
 import { formatPercent, formatCurrency } from '@/utils/format';

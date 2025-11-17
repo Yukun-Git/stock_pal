@@ -8,7 +8,7 @@
 |------|---------|------|
 | **web3-demo** | 3000 | ✅ 运行中 |
 | **my-first-dapp** | 3001 | ✅ 已配置 |
-| **stock_pal** | 4000-4001, 4080 | ✅ 已配置 |
+| **stock_pal** | 4000-4001, 4080, 5432 | ✅ 已配置 |
 | **pigeon_web** | 2776, 5000-5002, 5173, 5175, 5433-5434, 6380-6381, 8081, 8380-8381, 8386, 8388, 8390-8391, 8396, 8398 | ✅ 已占用 |
 
 ---
@@ -61,13 +61,32 @@ docker-compose up -d
 **Docker 环境:**
 - Frontend: `4080` ✅ 无冲突
 - Backend: `4001` ✅ 无冲突
+- PostgreSQL: `5432` ✅ 无冲突（PostgreSQL 标准端口）
 
 ### 配置信息
 
 - 项目路径: `/Users/yukun-admin/projects/stock_pal`
 - 前端访问: http://localhost:4000 (开发) / http://localhost:4080 (Docker)
 - 后端 API: http://localhost:4001
+- PostgreSQL: localhost:5432
+  - 数据库名: `stockpal`
+  - 用户名: `stockpal`
+  - 密码: `stockpal_dev_2024` (仅用于开发环境)
 - 详细文档: `/Users/yukun-admin/projects/stock_pal/PORT_INFO.md`
+
+### 访问 PostgreSQL
+
+```bash
+# 方式1: 从 Docker 容器访问
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal
+
+# 方式2: 从宿主机访问（需要安装 psql 客户端）
+psql -h localhost -p 5432 -U stockpal -d stockpal
+
+# 方式3: 进入容器后访问
+docker exec -it stock-backtest-postgres bash
+psql -U stockpal -d stockpal
+```
 
 ---
 
@@ -144,6 +163,7 @@ docker-compose up -d
 | 4000 | stock_pal | 前端开发服务器 | 开发 |
 | 4001 | stock_pal | 后端 API | 开发/Docker |
 | 4080 | stock_pal | 前端 Nginx | Docker |
+| 5432 | stock_pal | PostgreSQL | Docker |
 | 2776 | pigeon_web | SMPP Gateway | E2E Docker |
 | 5000 | pigeon_web | Flask 后端 | 本地开发 |
 | 5001 | pigeon_web | Flask 后端 | E2E Docker |
@@ -288,5 +308,5 @@ server: {
 
 ---
 
-**最后更新**: 2025-11-05
+**最后更新**: 2025-11-16
 **管理员**: 端口管理中枢

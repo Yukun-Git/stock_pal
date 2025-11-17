@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, Row, Col, Button, Collapse, Slider, Switch, Typography, Tooltip } from 'antd';
+import { Card, Row, Col, Button, Collapse, Slider, Switch, Typography, Tooltip, Radio } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import type { RiskConfig, RiskTemplate } from '@/types';
 
@@ -57,6 +57,7 @@ const TEMPLATE_INFO = {
 };
 
 export default function RiskConfigPanel({ value, onChange, onOpenHelp }: RiskConfigPanelProps) {
+  const [riskEnabled, setRiskEnabled] = useState(true);  // 是否启用风控
   const [selectedTemplate, setSelectedTemplate] = useState<RiskTemplate>('balanced');
   const [customConfig, setCustomConfig] = useState<RiskConfig>({
     stop_loss_pct: 0.10,
@@ -68,6 +69,18 @@ export default function RiskConfigPanel({ value, onChange, onOpenHelp }: RiskCon
   const [enableStopLoss, setEnableStopLoss] = useState(true);
   const [enableStopProfit, setEnableStopProfit] = useState(true);
   const [enableDrawdownProtection, setEnableDrawdownProtection] = useState(true);
+
+  // 处理风控启用/禁用切换
+  const handleRiskEnabledChange = (enabled: boolean) => {
+    setRiskEnabled(enabled);
+    if (!enabled) {
+      onChange?.(null);
+    } else {
+      // 启用时恢复到平衡型模板
+      setSelectedTemplate('balanced');
+      onChange?.(RISK_TEMPLATES.balanced);
+    }
+  };
 
   // 处理模板选择
   const handleTemplateSelect = (template: RiskTemplate) => {
@@ -105,20 +118,32 @@ export default function RiskConfigPanel({ value, onChange, onOpenHelp }: RiskCon
   return (
     <Card
       title={
-        <span>
-          风控配置
-          <Tooltip title="点击查看风控详细说明">
-            <QuestionCircleOutlined
-              style={{ marginLeft: 8, color: '#1890ff', fontSize: 14, cursor: 'pointer' }}
-              onClick={onOpenHelp}
-            />
-          </Tooltip>
-        </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>
+            风控配置
+            <Tooltip title="点击查看风控详细说明">
+              <QuestionCircleOutlined
+                style={{ marginLeft: 8, color: '#1890ff', fontSize: 14, cursor: 'pointer' }}
+                onClick={onOpenHelp}
+              />
+            </Tooltip>
+          </span>
+          <Radio.Group
+            value={riskEnabled}
+            onChange={(e) => handleRiskEnabledChange(e.target.value)}
+            size="small"
+          >
+            <Radio.Button value={true}>启用风控</Radio.Button>
+            <Radio.Button value={false}>不启用风控</Radio.Button>
+          </Radio.Group>
+        </div>
       }
     >
-      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-        选择风控模板：
-      </Text>
+      {riskEnabled ? (
+        <>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            选择风控模板：
+          </Text>
 
       {/* 模板选择卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -348,18 +373,13 @@ export default function RiskConfigPanel({ value, onChange, onOpenHelp }: RiskCon
           },
         ]}
       />
-
-      {/* 不启用风控选项 */}
-      <div style={{ marginTop: 16, textAlign: 'center' }}>
-        <Button
-          type="link"
-          danger
-          onClick={() => handleTemplateSelect(null)}
-          style={{ fontSize: 12 }}
-        >
-          不启用风控
-        </Button>
-      </div>
+        </>
+      ) : (
+        <div style={{ padding: '40px 0', textAlign: 'center', color: '#8c8c8c' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+          <Text type="secondary">已禁用风控，回测将不会执行止损、止盈等风险管理操作</Text>
+        </div>
+      )}
     </Card>
   );
 }

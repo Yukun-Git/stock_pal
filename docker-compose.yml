@@ -1,6 +1,35 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: stock-backtest-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=stockpal
+      - POSTGRES_PASSWORD=stockpal_dev_2024
+      - POSTGRES_DB=stockpal
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql  # 初始化脚本（可选）
+    ports:
+      - "5432:5432"  # PostgreSQL 标准端口
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockpal -d stockpal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Backend API Service
   backend:
     build:
@@ -13,11 +42,20 @@ services:
       - FLASK_DEBUG=False
       - API_VERSION=v1
       - CORS_ORIGINS=http://localhost:4000,http://127.0.0.1:4000,http://localhost:4080,http://127.0.0.1:4080,http://localhost
-      - DATA_SOURCE=akshare
+      # 数据源配置：可选值 'akshare' 或 'yfinance'
+      # - akshare: 免费，支持A股+港股，但服务不稳定
+      # - yfinance: 免费，支持全球市场，服务稳定（推荐）
+      - DATA_SOURCE=yfinance
       - CACHE_EXPIRY=3600
       - DEFAULT_INITIAL_CAPITAL=100000
       - DEFAULT_COMMISSION_RATE=0.0003
       - DB_PATH=/app/data/stock_cache.db
+      # PostgreSQL 配置
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=stockpal
+      - POSTGRES_PASSWORD=stockpal_dev_2024
+      - POSTGRES_DB=stockpal
     volumes:
       - ./data:/app/data  # Persist SQLite database to host
       - ./doc:/app/doc    # Mount documentation directory
@@ -25,6 +63,9 @@ services:
       - ./backend/tests:/app/tests  # Mount tests for development
     ports:
       - "4001:5000"  # Expose for direct access if needed
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - stock-network
     healthcheck:
@@ -76,3 +117,7 @@ networks:
   stock-network:
     driver: bridge
     name: stock-backtest-network
+
+volumes:
+  postgres-data:
+    name: stock-backtest-postgres-data

@@ -18,7 +18,7 @@ import {
 } from 'antd';
 import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { Strategy, BacktestResponse, RiskConfig } from '@/types';
+import type { Strategy, BacktestResponse, RiskConfig, BenchmarkOption } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
 import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
@@ -32,6 +32,7 @@ import RiskImpactCard from '@/components/RiskImpactCard';
 import RiskComparisonDrawer from '@/components/RiskComparisonDrawer';
 import RiskHelpDrawer from '@/components/RiskHelpDrawer';
 import RiskOnboarding, { shouldShowOnboarding } from '@/components/RiskOnboarding';
+import BenchmarkComparisonCard from '@/components/BenchmarkComparisonCard';
 import { METRIC_TOOLTIPS, getMetricColor } from '@/utils/metricsConfig';
 
 const { Title, Text } = Typography;
@@ -92,10 +93,12 @@ export default function BacktestPage() {
   const [helpDrawerOpen, setHelpDrawerOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding());
   const [lastRequestData, setLastRequestData] = useState<any>(null);  // 保存最后的请求数据
+  const [benchmarks, setBenchmarks] = useState<BenchmarkOption[]>([]);  // 基准列表
 
-  // Load strategies on mount
+  // Load strategies and benchmarks on mount
   useEffect(() => {
     loadStrategies();
+    loadBenchmarks();
   }, []);
 
   const loadStrategies = async () => {
@@ -104,6 +107,16 @@ export default function BacktestPage() {
       setStrategies(data);
     } catch (error) {
       message.error('加载策略列表失败');
+    }
+  };
+
+  const loadBenchmarks = async () => {
+    try {
+      const data = await backtestApi.getBenchmarks();
+      setBenchmarks(data);
+    } catch (error) {
+      console.error('Failed to load benchmarks:', error);
+      // 不显示错误消息，因为基准是可选的
     }
   };
 
@@ -223,6 +236,7 @@ export default function BacktestPage() {
         commission_rate: values.commissionRate,
         per_strategy_params,
         risk_config: riskConfig,  // 添加风控配置
+        benchmark: values.benchmark || undefined,  // 添加基准参数（可选）
       };
 
       // Use strategy_ids for multiple strategies, strategy_id for single
@@ -675,6 +689,22 @@ export default function BacktestPage() {
             </Col>
 
             <Col xs={24} md={8}>
+              <Form.Item label="对比基准" name="benchmark">
+                <Select
+                  placeholder="选择基准指数（可选）"
+                  allowClear
+                  style={{ width: '100%' }}
+                >
+                  {benchmarks.map((bench) => (
+                    <Select.Option key={bench.id} value={bench.id}>
+                      {bench.name} - {bench.description}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={24}>
               <Form.Item label=" ">
                 <Button
                   type="primary"
@@ -835,23 +865,23 @@ export default function BacktestPage() {
             metrics={[
               {
                 title: 'Sharpe 比率',
-                value: result.results.sharpe_ratio || 0,
-                precision: 2,
-                valueStyle: { color: getMetricColor('sharpe_ratio', result.results.sharpe_ratio || 0) },
+                value: result.results.sharpe_ratio != null ? result.results.sharpe_ratio : '-',
+                precision: result.results.sharpe_ratio != null ? 2 : undefined,
+                valueStyle: { color: result.results.sharpe_ratio != null ? getMetricColor('sharpe_ratio', result.results.sharpe_ratio) : '#8c8c8c' },
                 tooltip: METRIC_TOOLTIPS.sharpe_ratio,
               },
               {
                 title: 'Sortino 比率',
-                value: result.results.sortino_ratio || 0,
-                precision: 2,
-                valueStyle: { color: getMetricColor('sortino_ratio', result.results.sortino_ratio || 0) },
+                value: result.results.sortino_ratio != null ? result.results.sortino_ratio : '-',
+                precision: result.results.sortino_ratio != null ? 2 : undefined,
+                valueStyle: { color: result.results.sortino_ratio != null ? getMetricColor('sortino_ratio', result.results.sortino_ratio) : '#8c8c8c' },
                 tooltip: METRIC_TOOLTIPS.sortino_ratio,
               },
               {
                 title: 'Calmar 比率',
-                value: result.results.calmar_ratio || 0,
-                precision: 2,
-                valueStyle: { color: getMetricColor('calmar_ratio', result.results.calmar_ratio || 0) },
+                value: result.results.calmar_ratio != null ? result.results.calmar_ratio : '-',
+                precision: result.results.calmar_ratio != null ? 2 : undefined,
+                valueStyle: { color: result.results.calmar_ratio != null ? getMetricColor('calmar_ratio', result.results.calmar_ratio) : '#8c8c8c' },
                 tooltip: METRIC_TOOLTIPS.calmar_ratio,
               },
               {
@@ -916,6 +946,14 @@ export default function BacktestPage() {
             />
           )}
 
+          {/* Benchmark Comparison Card - Show if benchmark data is available */}
+          {result.benchmark && (
+            <BenchmarkComparisonCard
+              results={result.results}
+              benchmark={result.benchmark}
+            />
+          )}
+
           {/* K-Line Chart */}
           <Card title="K线图与买卖点" style={{ marginTop: 24 }}>
             <KLineChart
@@ -933,6 +971,8 @@ export default function BacktestPage() {
               data={result.equity_curve}
               initialCapital={result.results.initial_capital}
               comparisonData={comparisonResult?.equity_curve}
+              benchmarkData={result.benchmark?.equity_curve}
+              benchmarkName={result.benchmark?.name}
               height={300}
             />
           </Card>

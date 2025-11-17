@@ -201,11 +201,12 @@ class MetricsCalculator:
         # 超额收益
         excess_returns = returns - daily_rf
 
-        if excess_returns.std() == 0:
+        std = excess_returns.std()
+        if std == 0 or std < 1e-10:  # 使用阈值避免除以极小的数
             return 0.0
 
         # Sharpe 比率（年化）
-        return np.sqrt(MetricsCalculator.TRADING_DAYS_PER_YEAR) * excess_returns.mean() / excess_returns.std()
+        return np.sqrt(MetricsCalculator.TRADING_DAYS_PER_YEAR) * excess_returns.mean() / std
 
     @staticmethod
     def sortino_ratio(
@@ -235,11 +236,15 @@ class MetricsCalculator:
         # 只取负收益
         downside_returns = returns[returns < 0]
 
-        if len(downside_returns) == 0 or downside_returns.std() == 0:
+        if len(downside_returns) == 0:
+            return 0.0
+
+        downside_std = downside_returns.std()
+        if downside_std == 0 or downside_std < 1e-10:  # 使用阈值避免除以极小的数
             return 0.0
 
         # Sortino 比率（年化）
-        return np.sqrt(MetricsCalculator.TRADING_DAYS_PER_YEAR) * excess_returns.mean() / downside_returns.std()
+        return np.sqrt(MetricsCalculator.TRADING_DAYS_PER_YEAR) * excess_returns.mean() / downside_std
 
     @staticmethod
     def calmar_ratio(equity_curve: pd.Series) -> float:
@@ -262,8 +267,9 @@ class MetricsCalculator:
         cagr_value = MetricsCalculator.cagr(equity_curve)
         max_dd = MetricsCalculator.max_drawdown(equity_curve)
 
-        if max_dd == 0:
-            return float('inf') if cagr_value > 0 else 0.0
+        # 使用阈值避免除以极小的数
+        if max_dd == 0 or abs(max_dd) < 1e-10:
+            return 0.0
 
         return cagr_value / abs(max_dd)
 

@@ -1,10 +1,12 @@
 -- ============================================================================
--- 回测结果存储模块
+-- 回测结果存储模块 (PostgreSQL)
 -- ============================================================================
 -- 功能: 存储回测运行记录、交易明细、权益曲线等结果数据
 -- 使用: BacktestService V2 (未来实现)
+-- 数据库: PostgreSQL 15+
 -- 创建时间: 2025-11-12
--- 状态: 设计中（根据 doc/design/backtest_engine_upgrade_design.md）
+-- 最后更新: 2025-11-16
+-- 状态: 设计中（根据 doc/backlog/回测结果存储与历史查询.md）
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -24,38 +26,58 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     market_id VARCHAR(10),             -- 市场标识（CN_A, HK, US等）
     start_date DATE NOT NULL,          -- 回测开始日期
     end_date DATE NOT NULL,            -- 回测结束日期
-    initial_capital DECIMAL(15, 2) NOT NULL,  -- 初始资金
+    initial_capital NUMERIC(15, 2) NOT NULL,  -- 初始资金
 
     -- 回测结果（主要指标）
-    final_capital DECIMAL(15, 2),      -- 最终资金
-    total_return DECIMAL(10, 4),       -- 总收益率（%）
-    cagr DECIMAL(10, 4),               -- 年化收益率
-    sharpe_ratio DECIMAL(10, 4),       -- Sharpe比率
-    sortino_ratio DECIMAL(10, 4),      -- Sortino比率
-    calmar_ratio DECIMAL(10, 4),       -- Calmar比率
-    max_drawdown DECIMAL(10, 4),       -- 最大回撤（%）
+    final_capital NUMERIC(15, 2),      -- 最终资金
+    total_return NUMERIC(10, 4),       -- 总收益率（%）
+    cagr NUMERIC(10, 4),               -- 年化收益率
+    sharpe_ratio NUMERIC(10, 4),       -- Sharpe比率
+    sortino_ratio NUMERIC(10, 4),      -- Sortino比率
+    calmar_ratio NUMERIC(10, 4),       -- Calmar比率
+    max_drawdown NUMERIC(10, 4),       -- 最大回撤（%）
 
     -- 交易统计
     total_trades INTEGER,              -- 总交易次数
     winning_trades INTEGER,            -- 盈利次数
     losing_trades INTEGER,             -- 亏损次数
-    win_rate DECIMAL(10, 4),           -- 胜率（%）
-    profit_factor DECIMAL(10, 4),      -- 盈亏比
+    win_rate NUMERIC(10, 4),           -- 胜率（%）
+    profit_factor NUMERIC(10, 4),      -- 盈亏比
 
     -- JSON字段（存储完整配置和指标）
-    config JSON,                       -- 完整配置（策略参数、手续费、滑点等）
-    metrics JSON,                      -- 所有性能指标
-    metadata JSON,                     -- 元数据（引擎版本、数据版本等）
+    config JSONB,                      -- 完整配置（策略参数、手续费、滑点等）
+    metrics JSONB,                     -- 所有性能指标
+    metadata JSONB,                    -- 元数据（引擎版本、数据版本等）
 
     -- 时间戳
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_user_created (user_id, created_at),
-    INDEX idx_strategy (strategy_id),
-    INDEX idx_symbol (symbol),
-    INDEX idx_market (market_id)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 添加表注释
+COMMENT ON TABLE backtest_runs IS '回测运行记录主表';
+COMMENT ON COLUMN backtest_runs.id IS '回测唯一标识（UUID）';
+COMMENT ON COLUMN backtest_runs.config IS '完整回测配置（JSONB格式）';
+COMMENT ON COLUMN backtest_runs.metrics IS '所有性能指标（JSONB格式）';
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_user_created
+ON backtest_runs(user_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_strategy
+ON backtest_runs(strategy_id);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_symbol
+ON backtest_runs(symbol);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_market
+ON backtest_runs(market_id);
+
+-- JSONB 字段的 GIN 索引（加速 JSON 查询）
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_config_gin
+ON backtest_runs USING GIN (config);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_metrics_gin
+ON backtest_runs USING GIN (metrics);
 
 -- ----------------------------------------------------------------------------
 -- 表: backtest_trades
@@ -63,7 +85,7 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS backtest_trades (
     -- 主键
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
 
     -- 外键
     backtest_id VARCHAR(36) NOT NULL,  -- 关联 backtest_runs.id
@@ -71,27 +93,38 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
     -- 交易信息
     trade_id VARCHAR(50) NOT NULL,     -- 交易ID（内部生成）
     symbol VARCHAR(20) NOT NULL,       -- 股票代码
-    side ENUM('buy', 'sell') NOT NULL, -- 买入/卖出
-    quantity INT NOT NULL,             -- 数量（股）
-    price DECIMAL(10, 4) NOT NULL,     -- 成交价格
-    amount DECIMAL(15, 2) NOT NULL,    -- 成交金额
+    side VARCHAR(10) NOT NULL,         -- 买入/卖出 ('buy', 'sell')
+    quantity INTEGER NOT NULL,         -- 数量（股）
+    price NUMERIC(10, 4) NOT NULL,     -- 成交价格
+    amount NUMERIC(15, 2) NOT NULL,    -- 成交金额
 
     -- 费用
-    commission DECIMAL(10, 2),         -- 手续费
-    slippage DECIMAL(10, 4),           -- 滑点（bp）
-    stamp_tax DECIMAL(10, 2),          -- 印花税
+    commission NUMERIC(10, 2),         -- 手续费
+    slippage NUMERIC(10, 4),           -- 滑点（bp）
+    stamp_tax NUMERIC(10, 2),          -- 印花税
 
     -- 时间
-    executed_at DATETIME NOT NULL,     -- 成交时间
+    executed_at TIMESTAMP NOT NULL,    -- 成交时间
 
-    -- 外键约束
-    FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE,
-
-    -- 索引
-    INDEX idx_backtest (backtest_id),
-    INDEX idx_symbol (symbol),
-    INDEX idx_executed_at (executed_at)
+    -- 约束条件
+    CONSTRAINT chk_side CHECK (side IN ('buy', 'sell')),
+    CONSTRAINT fk_backtest FOREIGN KEY (backtest_id)
+        REFERENCES backtest_runs(id) ON DELETE CASCADE
 );
+
+-- 添加表注释
+COMMENT ON TABLE backtest_trades IS '回测交易明细记录';
+COMMENT ON COLUMN backtest_trades.side IS '交易方向：buy(买入) 或 sell(卖出)';
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_backtest_trades_backtest
+ON backtest_trades(backtest_id);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_trades_symbol
+ON backtest_trades(symbol);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_trades_executed_at
+ON backtest_trades(executed_at);
 
 -- ----------------------------------------------------------------------------
 -- 表: backtest_equity_curve
@@ -99,100 +132,29 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS backtest_equity_curve (
     -- 主键
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
 
     -- 外键
     backtest_id VARCHAR(36) NOT NULL,  -- 关联 backtest_runs.id
 
     -- 权益数据
     date DATE NOT NULL,                -- 日期
-    equity DECIMAL(15, 2) NOT NULL,    -- 总权益（现金+持仓）
-    capital DECIMAL(15, 2) NOT NULL,   -- 可用现金
-    position_value DECIMAL(15, 2),     -- 持仓市值
+    equity NUMERIC(15, 2) NOT NULL,    -- 总权益（现金+持仓）
+    capital NUMERIC(15, 2) NOT NULL,   -- 可用现金
+    position_value NUMERIC(15, 2),     -- 持仓市值
 
-    -- 外键约束
-    FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE,
-
-    -- 索引
-    INDEX idx_backtest_date (backtest_id, date)
+    -- 约束条件
+    CONSTRAINT fk_backtest_equity FOREIGN KEY (backtest_id)
+        REFERENCES backtest_runs(id) ON DELETE CASCADE
 );
 
--- ----------------------------------------------------------------------------
--- SQLite 版本（当前使用）
--- ----------------------------------------------------------------------------
--- 注意：上面使用的是MySQL语法，SQLite需要调整：
--- 1. AUTO_INCREMENT 改为 AUTOINCREMENT
--- 2. ENUM 改为 TEXT + CHECK 约束
--- 3. JSON 字段在SQLite中存储为TEXT
--- 4. 外键需要 PRAGMA foreign_keys = ON;
--- 5. 索引定义分开创建
+-- 添加表注释
+COMMENT ON TABLE backtest_equity_curve IS '回测权益曲线数据';
+COMMENT ON COLUMN backtest_equity_curve.equity IS '总权益 = 现金 + 持仓市值';
 
--- SQLite 适配版本：
-
--- PRAGMA foreign_keys = ON;
-
--- CREATE TABLE IF NOT EXISTS backtest_runs (
---     id TEXT PRIMARY KEY,
---     user_id TEXT,
---     strategy_id TEXT NOT NULL,
---     symbol TEXT NOT NULL,
---     market_id TEXT,
---     start_date DATE NOT NULL,
---     end_date DATE NOT NULL,
---     initial_capital REAL NOT NULL,
---     final_capital REAL,
---     total_return REAL,
---     cagr REAL,
---     sharpe_ratio REAL,
---     sortino_ratio REAL,
---     calmar_ratio REAL,
---     max_drawdown REAL,
---     total_trades INTEGER,
---     winning_trades INTEGER,
---     losing_trades INTEGER,
---     win_rate REAL,
---     profit_factor REAL,
---     config TEXT,      -- JSON as TEXT
---     metrics TEXT,     -- JSON as TEXT
---     metadata TEXT,    -- JSON as TEXT
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
-
--- CREATE INDEX IF NOT EXISTS idx_user_created ON backtest_runs(user_id, created_at);
--- CREATE INDEX IF NOT EXISTS idx_strategy ON backtest_runs(strategy_id);
--- CREATE INDEX IF NOT EXISTS idx_symbol ON backtest_runs(symbol);
--- CREATE INDEX IF NOT EXISTS idx_market ON backtest_runs(market_id);
-
--- CREATE TABLE IF NOT EXISTS backtest_trades (
---     id INTEGER PRIMARY KEY AUTOINCREMENT,
---     backtest_id TEXT NOT NULL,
---     trade_id TEXT NOT NULL,
---     symbol TEXT NOT NULL,
---     side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
---     quantity INTEGER NOT NULL,
---     price REAL NOT NULL,
---     amount REAL NOT NULL,
---     commission REAL,
---     slippage REAL,
---     stamp_tax REAL,
---     executed_at DATETIME NOT NULL,
---     FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
--- );
-
--- CREATE INDEX IF NOT EXISTS idx_backtest_trades ON backtest_trades(backtest_id);
--- CREATE INDEX IF NOT EXISTS idx_trade_symbol ON backtest_trades(symbol);
-
--- CREATE TABLE IF NOT EXISTS backtest_equity_curve (
---     id INTEGER PRIMARY KEY AUTOINCREMENT,
---     backtest_id TEXT NOT NULL,
---     date DATE NOT NULL,
---     equity REAL NOT NULL,
---     capital REAL NOT NULL,
---     position_value REAL,
---     FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
--- );
-
--- CREATE INDEX IF NOT EXISTS idx_equity_backtest_date ON backtest_equity_curve(backtest_id, date);
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_backtest_equity_curve_backtest_date
+ON backtest_equity_curve(backtest_id, date);
 
 -- ----------------------------------------------------------------------------
 -- 示例查询
@@ -262,11 +224,23 @@ CREATE TABLE IF NOT EXISTS backtest_equity_curve (
 -- ORDER BY sharpe_ratio DESC
 -- LIMIT 10;
 
+-- 6. 使用 JSONB 查询特定配置参数
+-- SELECT id, strategy_id, config->>'commission_rate' as commission
+-- FROM backtest_runs
+-- WHERE config->>'commission_rate' = '0.0003';
+
+-- 7. 查询包含特定指标的回测
+-- SELECT id, strategy_id, metrics->'risk'->>'max_drawdown' as max_dd
+-- FROM backtest_runs
+-- WHERE (metrics->'risk'->>'max_drawdown')::numeric < 0.2;
+
 -- ============================================================================
 -- 维护说明
 -- ============================================================================
 -- 1. 数据清理：定期清理旧的回测记录（如6个月前的）
 -- 2. 外键级联：删除 backtest_runs 记录会自动删除关联的 trades 和 equity_curve
--- 3. JSON字段：使用时需解析，考虑性能影响
+-- 3. JSONB字段：使用 GIN 索引加速查询，支持复杂的 JSON 查询
 -- 4. 索引优化：根据实际查询模式调整索引
+-- 5. 分区表：回测记录超过百万条时考虑按月份分区
+-- 6. 定期 VACUUM：保持表性能，回收空间
 -- ============================================================================

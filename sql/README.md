@@ -24,19 +24,24 @@ sql/
 ### 方式1: 使用自动化脚本（推荐）
 
 ```bash
-# 初始化数据库（默认路径：data/stock_cache.db）
+# 在 Docker 容器中初始化数据库
+docker exec -it stock-backtest-backend /bin/bash
+cd /app
 ./sql/init_db.sh
 
-# 或指定数据库路径
-./sql/init_db.sh /custom/path/to/database.db
+# 或从宿主机执行
+docker exec -it stock-backtest-backend bash -c "cd /app && ./sql/init_db.sh"
 ```
 
 ### 方式2: 手动执行模块SQL
 
 ```bash
+# 进入 PostgreSQL 容器
+docker exec -it stock-backtest-postgres bash
+
 # 逐个模块执行
-sqlite3 data/stock_cache.db < sql/modules/01_stock_data_cache.sql
-sqlite3 data/stock_cache.db < sql/modules/02_backtest_results.sql
+psql -U stockpal -d stockpal -f /path/to/01_stock_data_cache.sql
+psql -U stockpal -d stockpal -f /path/to/02_backtest_results.sql
 # ... 依次执行其他模块
 ```
 
@@ -106,18 +111,28 @@ backtest_equity_curve (backtest_id, date, equity, capital, ...)
 ## 🗄️ 数据库信息
 
 ### 当前配置
-- **类型**: SQLite 3
-- **文件**: `data/stock_cache.db`
-- **大小**: 动态增长（视缓存数据量）
-- **WAL模式**: 已启用（提升并发性能）
+- **类型**: PostgreSQL 15
+- **容器**: stock-backtest-postgres
+- **数据库名**: stockpal
+- **用户**: stockpal
+- **端口**: 5432
+- **持久化**: Docker volume (postgres-data)
+- **字符编码**: UTF-8
 - **外键约束**: 已启用
 
 ### 性能优化
+PostgreSQL 15 提供了现代化的查询优化器和高级特性：
 ```sql
-PRAGMA journal_mode = WAL;       -- 写前日志，提升并发
-PRAGMA synchronous = NORMAL;     -- 平衡性能与安全
-PRAGMA cache_size = -2000;       -- 2MB缓存
-PRAGMA busy_timeout = 5000;      -- 5秒锁等待
+-- 查看数据库配置
+SHOW shared_buffers;
+SHOW work_mem;
+SHOW effective_cache_size;
+
+-- 启用查询计划分析
+EXPLAIN ANALYZE SELECT * FROM stock_data WHERE symbol='000001';
+
+-- 查看表大小
+SELECT pg_size_pretty(pg_total_relation_size('stock_data'));
 ```
 
 ---
@@ -127,47 +142,58 @@ PRAGMA busy_timeout = 5000;      -- 5秒锁等待
 ### 查看数据库信息
 
 ```bash
+# 连接到 PostgreSQL
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal
+
 # 查看所有表
-sqlite3 data/stock_cache.db ".tables"
+\dt
 
 # 查看表结构
-sqlite3 data/stock_cache.db ".schema stock_data"
+\d stock_data
 
 # 查看数据统计
-sqlite3 data/stock_cache.db "SELECT COUNT(*) FROM stock_data;"
+SELECT COUNT(*) FROM stock_data;
+
+# 查看表大小
+SELECT pg_size_pretty(pg_total_relation_size('stock_data'));
 ```
 
 ### 备份与恢复
 
 ```bash
 # 备份数据库
-cp data/stock_cache.db data/stock_cache.db.backup_$(date +%Y%m%d)
+docker exec stock-backtest-postgres pg_dump -U stockpal stockpal > backup_$(date +%Y%m%d).sql
 
-# 导出为SQL
-sqlite3 data/stock_cache.db .dump > backup.sql
+# 恢复数据库
+docker exec -i stock-backtest-postgres psql -U stockpal stockpal < backup.sql
 
-# 从SQL恢复
-sqlite3 data/stock_cache.db < backup.sql
+# 备份到容器内（然后复制出来）
+docker exec stock-backtest-postgres pg_dump -U stockpal -F c -f /tmp/backup.dump stockpal
+docker cp stock-backtest-postgres:/tmp/backup.dump ./backup.dump
 ```
 
 ### 数据清理
 
 ```bash
 # 清理1年前的数据
-sqlite3 data/stock_cache.db "DELETE FROM stock_data WHERE date < date('now', '-1 year');"
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "DELETE FROM stock_data WHERE date < CURRENT_DATE - INTERVAL '1 year';"
 
-# 回收空间
-sqlite3 data/stock_cache.db "VACUUM;"
+# 回收空间（VACUUM）
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c "VACUUM FULL stock_data;"
 
 # 重建索引
-sqlite3 data/stock_cache.db "REINDEX;"
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c "REINDEX TABLE stock_data;"
+
+# 分析表（更新统计信息）
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c "ANALYZE stock_data;"
 ```
 
 ### 查询示例
 
 ```bash
 # 查询缓存统计
-sqlite3 data/stock_cache.db <<EOF
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal <<EOF
 SELECT
     COUNT(DISTINCT symbol) as stock_count,
     COUNT(*) as total_records,
@@ -177,73 +203,115 @@ FROM stock_data;
 EOF
 
 # 查询某只股票
-sqlite3 data/stock_cache.db "SELECT * FROM stock_data WHERE symbol='000001' LIMIT 10;"
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT * FROM stock_data WHERE symbol='000001' LIMIT 10;"
 
 # 查看同步日志
-sqlite3 data/stock_cache.db "SELECT * FROM data_sync_log ORDER BY updated_at DESC;"
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT * FROM data_sync_log ORDER BY updated_at DESC;"
 ```
 
 ---
 
 ## 📈 数据库迁移
 
-### 未来迁移计划
+### 迁移历史
 
-当满足以下条件时，考虑迁移到 **PostgreSQL** 或 **MySQL**：
-- [ ] 多用户并发访问（>10用户）
-- [ ] 数据量 >10GB
-- [ ] 需要分布式部署
-- [ ] 需要复杂查询优化
+**2025-11-16: SQLite → PostgreSQL 迁移完成**
 
-### 迁移步骤
+系统已从 SQLite 迁移到 PostgreSQL 15，获得以下优势：
+- ✅ 真正的并发支持（多用户同时访问）
+- ✅ JSONB 类型支持（高效存储和查询 JSON 数据）
+- ✅ 高级索引类型（GIN, GIST, BRIN等）
+- ✅ 触发器和存储过程（业务逻辑数据库端实现）
+- ✅ 更好的性能和扩展性
+- ✅ 完整的 ACID 事务支持
+- ✅ 丰富的数据类型（UUID, INET, 数组等）
 
-**SQLite → PostgreSQL**:
+### 迁移步骤（如需要从旧版本迁移数据）
+
+**从 SQLite 导入到 PostgreSQL**:
 ```bash
-# 1. 使用 pgloader
-pgloader data/stock_cache.db postgresql://user:pass@localhost/stock_pal
+# 1. 导出 SQLite 数据
+sqlite3 data/stock_cache.db .dump > sqlite_dump.sql
 
-# 2. 或手动迁移
-sqlite3 data/stock_cache.db .dump > dump.sql
-# 调整SQL语法（AUTOINCREMENT → SERIAL等）
-psql -U user -d stock_pal -f dump.sql
+# 2. 使用 pgloader (推荐)
+# 安装 pgloader: brew install pgloader (macOS)
+pgloader data/stock_cache.db postgresql://stockpal:stockpal_dev_2024@localhost:5432/stockpal
+
+# 3. 或手动转换并导入
+# 注意：需要调整SQL语法差异
+# - INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL
+# - REAL → NUMERIC
+# - TEXT → VARCHAR/TEXT
+# - DATETIME → TIMESTAMP
+
+# 4. 验证数据
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT COUNT(*) FROM stock_data;"
 ```
 
 ---
 
 ## 🔍 故障排查
 
-### 问题1: "database is locked"
-**原因**: 多个进程同时写入
+### 问题1: "connection refused"
+**原因**: PostgreSQL 容器未启动或端口未暴露
 **解决**:
-```sql
--- 增加超时时间
-PRAGMA busy_timeout = 10000;
+```bash
+# 检查容器状态
+docker ps | grep postgres
 
--- 或启用WAL模式
-PRAGMA journal_mode = WAL;
+# 启动 PostgreSQL 容器
+docker-compose up -d postgres
+
+# 查看日志
+docker logs stock-backtest-postgres
 ```
 
-### 问题2: 数据库文件过大
+### 问题2: 数据库容量过大
 **解决**:
 ```bash
 # 1. 清理旧数据
-sqlite3 data/stock_cache.db "DELETE FROM stock_data WHERE date < date('now', '-2 years');"
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "DELETE FROM stock_data WHERE date < CURRENT_DATE - INTERVAL '2 years';"
 
-# 2. 回收空间
-sqlite3 data/stock_cache.db "VACUUM;"
+# 2. 执行 VACUUM FULL
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "VACUUM FULL;"
 
-# 3. 查看文件大小
-du -h data/stock_cache.db
+# 3. 查看数据库大小
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT pg_size_pretty(pg_database_size('stockpal'));"
 ```
 
-### 问题3: 外键约束错误
+### 问题3: 查询性能慢
 **解决**:
-```sql
--- 检查外键是否启用
-PRAGMA foreign_keys;
+```bash
+# 1. 分析查询计划
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "EXPLAIN ANALYZE SELECT * FROM stock_data WHERE symbol='000001';"
 
--- 启用外键
-PRAGMA foreign_keys = ON;
+# 2. 更新表统计信息
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "ANALYZE stock_data;"
+
+# 3. 检查是否缺少索引
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT * FROM pg_indexes WHERE tablename='stock_data';"
+```
+
+### 问题4: 外键约束错误
+**解决**:
+```bash
+# 检查外键约束
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT conname, conrelid::regclass, confrelid::regclass
+   FROM pg_constraint WHERE contype = 'f';"
+
+# 查看违反约束的数据
+docker exec -it stock-backtest-postgres psql -U stockpal -d stockpal -c \
+  "SELECT * FROM backtest_trades WHERE backtest_id NOT IN (SELECT id FROM backtest_runs);"
 ```
 
 ---
@@ -251,9 +319,10 @@ PRAGMA foreign_keys = ON;
 ## 📚 相关文档
 
 - [数据库模块详细说明](./modules/README.md)
-- [回测引擎设计文档](../doc/design/backtest_engine_upgrade_design.md)
-- [产品需求文档](../doc/requirements/product_requirements_stock_pal.md)
-- [SQLite 官方文档](https://www.sqlite.org/docs.html)
+- [回测结果存储backlog](../doc/backlog/回测结果存储与历史查询.md)
+- [PostgreSQL 官方文档](https://www.postgresql.org/docs/15/)
+- [PostgreSQL 性能调优](https://wiki.postgresql.org/wiki/Performance_Optimization)
+- [psql 命令参考](https://www.postgresql.org/docs/current/app-psql.html)
 
 ---
 
@@ -261,11 +330,12 @@ PRAGMA foreign_keys = ON;
 
 | 版本 | 日期 | 变更内容 |
 |------|------|---------|
-| v1.0 | 2024-10-30 | 初始版本，股票数据缓存模块 |
+| v1.0 | 2024-10-30 | 初始版本，SQLite 股票数据缓存模块 |
 | v1.1 | 2025-11-12 | 添加回测结果存储模块设计 |
 | v1.2 | 2025-11-12 | 规范化SQL模块结构，添加文档 |
+| v2.0 | 2025-11-16 | **重大更新**：从 SQLite 迁移到 PostgreSQL 15 |
 
 ---
 
 **维护人员**: 开发团队
-**最后更新**: 2025-11-12
+**最后更新**: 2025-11-16

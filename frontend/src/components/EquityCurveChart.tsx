@@ -7,14 +7,24 @@ import { formatCurrency } from '@/utils/format';
 interface EquityCurveChartProps {
   data: EquityPoint[];
   initialCapital: number;
-  comparisonData?: EquityPoint[];  // 新增：对比数据（无风控）
+  comparisonData?: EquityPoint[];  // 对比数据（无风控）
+  benchmarkData?: EquityPoint[];   // 新增：基准数据
+  benchmarkName?: string;          // 新增：基准名称
   height?: number;
 }
 
-export default function EquityCurveChart({ data, initialCapital, comparisonData, height = 300 }: EquityCurveChartProps) {
+export default function EquityCurveChart({
+  data,
+  initialCapital,
+  comparisonData,
+  benchmarkData,
+  benchmarkName = '基准指数',
+  height = 300
+}: EquityCurveChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   const [showComparison, setShowComparison] = useState(true);
+  const [showBenchmark, setShowBenchmark] = useState(true);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
@@ -27,17 +37,25 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
 
     const dates = data.map(item => item.date);
     const equityData = data.map(item => item.equity);
-    const benchmarkData = data.map(() => initialCapital);
+    const capitalData = data.map(() => initialCapital);  // 改名避免冲突
 
     // Prepare comparison data if available
     const comparisonEquityData = comparisonData && showComparison
       ? comparisonData.map(item => item.equity)
       : [];
 
+    // Prepare benchmark data if available
+    const benchmarkEquityData = benchmarkData && showBenchmark
+      ? benchmarkData.map(item => item.equity)
+      : [];
+
     // Build legend data
-    const legendData = ['资产曲线（有风控）', '本金'];
+    const legendData = ['策略资产', '本金'];
     if (comparisonData && showComparison) {
-      legendData.push('资产曲线（无风控）');
+      legendData.push('无风控资产');
+    }
+    if (benchmarkData && showBenchmark) {
+      legendData.push(benchmarkName);
     }
 
     const option = {
@@ -51,22 +69,30 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
           let result = `日期: ${dates[params[0].dataIndex]}<br/>`;
 
           params.forEach((param: any) => {
-            if (param.seriesName === '资产曲线（有风控）') {
-              result += `有风控: ${formatCurrency(param.value)}<br/>`;
-            } else if (param.seriesName === '资产曲线（无风控）') {
+            if (param.seriesName === '策略资产') {
+              result += `策略资产: ${formatCurrency(param.value)}<br/>`;
+            } else if (param.seriesName === '无风控资产') {
               result += `无风控: ${formatCurrency(param.value)}<br/>`;
             } else if (param.seriesName === '本金') {
               result += `本金: ${formatCurrency(param.value)}<br/>`;
+            } else if (param.seriesName === benchmarkName) {
+              result += `${benchmarkName}: ${formatCurrency(param.value)}<br/>`;
             }
           });
 
-          // Calculate difference if comparison data exists
-          if (params.length >= 2 && comparisonData && showComparison) {
-            const withRisk = params.find((p: any) => p.seriesName === '资产曲线（有风控）');
-            const withoutRisk = params.find((p: any) => p.seriesName === '资产曲线（无风控）');
-            if (withRisk && withoutRisk) {
-              const diff = withRisk.value - withoutRisk.value;
-              result += `<br/>差异: ${formatCurrency(diff)} (${diff >= 0 ? '+' : ''}${((diff / withoutRisk.value) * 100).toFixed(2)}%)`;
+          // Calculate returns comparison
+          const strategyPoint = params.find((p: any) => p.seriesName === '策略资产');
+          if (strategyPoint) {
+            const strategyReturn = ((strategyPoint.value - initialCapital) / initialCapital * 100).toFixed(2);
+            result += `<br/>策略收益率: ${strategyReturn}%`;
+
+            // If benchmark exists, show comparison
+            const benchmarkPoint = params.find((p: any) => p.seriesName === benchmarkName);
+            if (benchmarkPoint && showBenchmark) {
+              const benchmarkReturn = ((benchmarkPoint.value - initialCapital) / initialCapital * 100).toFixed(2);
+              result += `<br/>${benchmarkName}收益率: ${benchmarkReturn}%`;
+              const diff = parseFloat(strategyReturn) - parseFloat(benchmarkReturn);
+              result += `<br/>超额收益: ${diff >= 0 ? '+' : ''}${diff.toFixed(2)}%`;
             }
           }
 
@@ -102,7 +128,7 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
       },
       series: [
         {
-          name: '资产曲线（有风控）',
+          name: '策略资产',
           type: 'line',
           data: equityData,
           smooth: true,
@@ -120,7 +146,7 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
         {
           name: '本金',
           type: 'line',
-          data: benchmarkData,
+          data: capitalData,  // 使用新的变量名
           lineStyle: {
             type: 'dashed',
             color: '#bfbfbf',
@@ -130,7 +156,7 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
         ...(comparisonData && showComparison
           ? [
               {
-                name: '资产曲线（无风控）',
+                name: '无风控资产',
                 type: 'line',
                 data: comparisonEquityData,
                 smooth: true,
@@ -138,6 +164,23 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
                   width: 2,
                   type: 'dashed' as const,
                   color: '#ff7875',
+                },
+              },
+            ]
+          : []),
+        ...(benchmarkData && showBenchmark
+          ? [
+              {
+                name: benchmarkName,
+                type: 'line',
+                data: benchmarkEquityData,
+                smooth: true,
+                lineStyle: {
+                  width: 2,
+                  color: '#52c41a',
+                },
+                itemStyle: {
+                  color: '#52c41a',
                 },
               },
             ]
@@ -155,7 +198,7 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [data, initialCapital, comparisonData, showComparison]);
+  }, [data, initialCapital, comparisonData, benchmarkData, benchmarkName, showComparison, showBenchmark]);
 
   useEffect(() => {
     return () => {
@@ -168,14 +211,24 @@ export default function EquityCurveChart({ data, initialCapital, comparisonData,
 
   return (
     <div style={{ position: 'relative' }}>
-      {comparisonData && (
-        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }}>
-          <Switch
-            checked={showComparison}
-            onChange={setShowComparison}
-            checkedChildren="显示对比"
-            unCheckedChildren="隐藏对比"
-          />
+      {(comparisonData || benchmarkData) && (
+        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', gap: 8 }}>
+          {comparisonData && (
+            <Switch
+              checked={showComparison}
+              onChange={setShowComparison}
+              checkedChildren="显示对比"
+              unCheckedChildren="隐藏对比"
+            />
+          )}
+          {benchmarkData && (
+            <Switch
+              checked={showBenchmark}
+              onChange={setShowBenchmark}
+              checkedChildren="显示基准"
+              unCheckedChildren="隐藏基准"
+            />
+          )}
         </div>
       )}
       <div ref={chartRef} style={{ width: '100%', height: `${height}px` }} />

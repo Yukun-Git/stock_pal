@@ -10,12 +10,15 @@ from app.services.indicator_service import IndicatorService
 from app.services.strategy_service import StrategyService
 from app.services.strategy_combiner import StrategyCombiner
 from app.services.signal_analysis_service import SignalAnalysisService
+from app.services.benchmark_service import BenchmarkService
 
 # 新回测引擎
 from app.backtest.orchestrator import BacktestOrchestrator
 from app.backtest.models import BacktestConfig, StockInfo
 from app.backtest.risk_manager import RiskConfig
 from app.backtest.optimization import GridSearchOptimizer
+from app.backtest.rules.symbol_classifier import SymbolClassifier
+from app.backtest.rules.lot_size_rules import LotSizeRules
 
 
 class StrategyListResource(Resource):
@@ -108,7 +111,8 @@ class BacktestResource(Resource):
                 "min_commission": 5.0,
                 "slippage_bps": 5.0,
                 "stamp_tax_rate": 0.001,
-                "strategy_params": {...}
+                "strategy_params": {...},
+                "benchmark": "CSI300"  // Optional: benchmark index
             }
 
             Multiple strategies (combined):
@@ -121,7 +125,8 @@ class BacktestResource(Resource):
                 "end_date": "20241231",
                 "initial_capital": 100000,
                 "commission_rate": 0.0003,
-                "strategy_params": {...}
+                "strategy_params": {...},
+                "benchmark": "CSI300"  // Optional: benchmark index
             }
 
         Returns:
@@ -170,6 +175,27 @@ class BacktestResource(Resource):
                 end_date=end_date,
                 adjust='qfq'
             )
+
+            # Validate data availability
+            if df is None or df.empty:
+                return {
+                    'success': False,
+                    'error': f'无法获取股票 {symbol} 的数据。可能原因：'
+                            f'1) 股票代码不正确；'
+                            f'2) 该股票为港股/美股，当前系统主要支持A股数据；'
+                            f'3) 数据源暂时不可用。'
+                            f'提示：请确认股票代码，或尝试使用A股股票（如600519）。'
+                }, 400
+
+            # Check if we have enough data for backtesting
+            min_required_days = 60  # MACD needs at least ~30-40 days, we require 60 to be safe
+            if len(df) < min_required_days:
+                return {
+                    'success': False,
+                    'error': f'数据量不足：仅获取到 {len(df)} 条记录，'
+                            f'至少需要 {min_required_days} 条记录才能进行回测。'
+                            f'请扩大日期范围或检查股票数据。'
+                }, 400
 
             # Calculate indicators
             df = IndicatorService.calculate_all_indicators(df)
@@ -233,6 +259,34 @@ class BacktestResource(Resource):
             if orchestrator.environment is None:
                 raise ValueError("Failed to initialize trading environment")
 
+            # 前置校验：资金是否足够买入一手（考虑风控单票上限）
+            try:
+                market, _ = SymbolClassifier.classify(symbol)
+                lot_size = LotSizeRules.get_lot_size(symbol, market)
+                first_close = float(df.iloc[0]['close'])
+                # 近似所需资金 = 一手价格 + 手续费（保守加上最低佣金）
+                commission_rate = float(data.get('commission_rate', 0.0003))
+                min_commission = float(data.get('min_commission', 5.0))
+                needed = first_close * lot_size * (1 + commission_rate) + min_commission
+
+                initial_capital = float(data.get('initial_capital', 100000))
+                # 若配置了风控，单票资金允许上限 = 初始资金 * max_position_pct
+                max_pos_pct = risk_config.max_position_pct if risk_config else 1.0
+                allowed_capital = initial_capital * max_pos_pct
+
+                if allowed_capital < needed:
+                    return {
+                        'success': False,
+                        'error': (
+                            f'资金不足以买入一手：需要约 {needed:.2f}，'
+                            f'当前允许单票资金上限约 {allowed_capital:.2f}（考虑单票仓位{max_pos_pct:.0%}）。\n'
+                            f'建议：提高初始资金或放宽单票仓位上限，或选择价格较低的标的。'
+                        )
+                    }, 400
+            except Exception:
+                # 忽略校验异常，不阻断回测
+                pass
+
             # Create stock info for new engine (after orchestrator initializes environment)
             stock_info_obj = StockInfo(
                 symbol=symbol,
@@ -243,7 +297,8 @@ class BacktestResource(Resource):
             result = orchestrator.run(
                 market_data=df[['date', 'open', 'high', 'low', 'close', 'volume']],
                 signals=df_with_signals[['date', 'signal']],
-                stock_info=stock_info_obj
+                stock_info=stock_info_obj,
+                benchmark_id=data.get('benchmark')  # 新增：支持基准对比
             )
 
             # Convert trades to API format
@@ -273,19 +328,19 @@ class BacktestResource(Resource):
             df_with_signals['date'] = df_with_signals['date'].astype(str)
             klines = df_with_signals[['date', 'open', 'high', 'low', 'close', 'volume', 'signal']].to_dict('records')
 
-            # Find buy/sell points
+            # Find buy/sell points from actual trades (not signals)
             buy_points = []
             sell_points = []
-            for i, row in df_with_signals.iterrows():
-                if row['signal'] == 1:
+            for trade in trades_api:
+                if trade['action'] == 'buy':
                     buy_points.append({
-                        'date': str(row['date']),
-                        'price': row['close']
+                        'date': trade['date'],
+                        'price': trade['price']
                     })
-                elif row['signal'] == -1:
+                elif trade['action'] == 'sell':
                     sell_points.append({
-                        'date': str(row['date']),
-                        'price': row['close']
+                        'date': trade['date'],
+                        'price': trade['price']
                     })
 
             # Prepare strategy info
@@ -320,6 +375,35 @@ class BacktestResource(Resource):
             # Build enhanced results using new metrics
             metrics = result.metrics
 
+            # Prepare benchmark data (if available)
+            benchmark_response = None
+            if hasattr(result, 'benchmark_equity') and result.benchmark_equity is not None:
+                # Convert benchmark equity curve to API format
+                benchmark_equity_api = []
+                for _, row in result.benchmark_equity.iterrows():
+                    benchmark_equity_api.append({
+                        'date': row['date'].strftime('%Y-%m-%d'),
+                        'equity': float(row['equity'])
+                    })
+
+                # Calculate benchmark metrics
+                from app.backtest.metrics import MetricsCalculator
+                benchmark_equity_series = result.benchmark_equity.set_index('date')['equity']
+                benchmark_metrics = {
+                    'total_return': float(MetricsCalculator.total_return(benchmark_equity_series)),
+                    'cagr': float(MetricsCalculator.cagr(benchmark_equity_series)),
+                    'sharpe_ratio': float(MetricsCalculator.sharpe_ratio(benchmark_equity_series.pct_change().dropna())),
+                    'max_drawdown': float(MetricsCalculator.max_drawdown(benchmark_equity_series)),
+                    'volatility': float(MetricsCalculator.volatility(benchmark_equity_series.pct_change().dropna()))
+                }
+
+                benchmark_response = {
+                    'id': result.benchmark_id,
+                    'name': result.benchmark_name,
+                    'equity_curve': benchmark_equity_api,
+                    'metrics': benchmark_metrics
+                }
+
             return {
                 'success': True,
                 'data': {
@@ -346,6 +430,12 @@ class BacktestResource(Resource):
                         'avg_holding_period': float(metrics.get('avg_holding_period', 0)),
                         'avg_trade_return': float(metrics.get('avg_trade_return', 0)),
 
+                        # Benchmark comparison metrics (if available)
+                        'alpha': float(metrics.get('alpha', 0)) if 'alpha' in metrics else None,
+                        'beta': float(metrics.get('beta', 0)) if 'beta' in metrics else None,
+                        'information_ratio': float(metrics.get('information_ratio', 0)) if 'information_ratio' in metrics else None,
+                        'tracking_error': float(metrics.get('tracking_error', 0)) if 'tracking_error' in metrics else None,
+
                         # Backward compatibility
                         'winning_trades': int(metrics.get('total_trades', 0) * metrics.get('win_rate', 0) / 100) if metrics.get('win_rate', 0) > 0 else 0,
                         'losing_trades': int(metrics.get('total_trades', 0) * (1 - metrics.get('win_rate', 0) / 100)) if metrics.get('win_rate', 0) > 0 else 0,
@@ -358,7 +448,8 @@ class BacktestResource(Resource):
                     'buy_points': buy_points,
                     'sell_points': sell_points,
                     'signal_analysis': signal_analysis,
-                    'metadata': result.metadata  # New: backtest metadata
+                    'metadata': result.metadata,  # New: backtest metadata
+                    'benchmark': benchmark_response  # New: benchmark comparison data
                 }
             }, 200
 
@@ -489,6 +580,30 @@ class BacktestOptimizeResource(Resource):
         except Exception as e:
             import traceback
             traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e)
+            }, 500
+
+
+class BenchmarkListResource(Resource):
+    """Resource for getting list of available benchmark indices."""
+
+    def get(self):
+        """Get list of all available benchmark indices.
+
+        Returns:
+            JSON response with benchmark list
+        """
+        try:
+            benchmarks = BenchmarkService.get_benchmark_list()
+
+            return {
+                'success': True,
+                'data': benchmarks
+            }, 200
+
+        except Exception as e:
             return {
                 'success': False,
                 'error': str(e)

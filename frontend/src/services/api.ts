@@ -5,6 +5,7 @@ import type {
   StrategyDocumentation,
   BacktestRequest,
   BacktestResponse,
+  BenchmarkOption,
 } from '@/types';
 
 // Use relative path to leverage Vite proxy in development
@@ -123,6 +124,14 @@ export const backtestApi = {
     }
 
     return data.data;
+  },
+
+  /**
+   * Get available benchmark indices
+   */
+  getBenchmarks: async (): Promise<BenchmarkOption[]> => {
+    const response = await api.get('/api/v1/benchmarks');
+    return response.data.data;
   },
 };
 

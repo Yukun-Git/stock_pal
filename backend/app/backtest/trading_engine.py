@@ -21,6 +21,7 @@ from .models import (
 )
 from .matching_engine import MatchingEngine
 from .rules.validator import TradingRulesValidator
+from .rules.lot_size_rules import LotSizeRules
 from .risk_manager import RiskManager, RiskConfig
 
 logger = logging.getLogger(__name__)
@@ -191,7 +192,7 @@ class TradingEngine:
             logger.debug(f"Already holding {signal.symbol}, skip buy signal")
             return None
 
-        # 计算可买数量（使用全部可用资金）
+        # 计算可买数量（默认使用全部可用资金）
         available_cash = self.portfolio.cash
         # 预估手续费（粗略估算）
         estimated_commission = max(
@@ -205,11 +206,44 @@ class TradingEngine:
             logger.debug("Insufficient cash for buying")
             return None
 
-        # 计算数量（向下取整到100的倍数，A股一手=100股）
-        quantity = int(usable_cash / signal.price / 100) * 100
+        # 获取每手股数（根据市场和股票代码）
+        lot_size = LotSizeRules.get_lot_size(signal.symbol, self.environment.market)
+
+        # 计算数量（向下取整到整手）
+        raw_quantity = int(usable_cash / signal.price)
+        quantity = LotSizeRules.round_to_lot(raw_quantity, lot_size)
+
+        # 根据风控仓位限制自动调整下单数量（而不是直接拒单）
+        if self.risk_manager and quantity > 0:
+            try:
+                # 1) 单票仓位上限
+                max_position_value = self.risk_manager.config.max_position_pct * self.portfolio.total_equity
+                allowed_by_position = int(max_position_value / signal.price)
+
+                # 2) 总仓位上限
+                current_total_value = 0.0
+                for pos in self.portfolio.positions.values():
+                    current_total_value += pos.quantity * pos.current_price
+                max_total_value = self.risk_manager.config.max_total_exposure * self.portfolio.total_equity
+                remaining_total_value = max_total_value - current_total_value
+                allowed_by_exposure = int(max(0.0, remaining_total_value) / signal.price)
+
+                # 3) 取三者最小并对齐整手
+                allowed_shares = max(0, min(quantity, allowed_by_position, allowed_by_exposure))
+                quantity = LotSizeRules.round_to_lot(allowed_shares, lot_size)
+
+                if quantity <= 0:
+                    logger.info(
+                        "Order size reduced to 0 by risk limits: "
+                        f"max_position_pct={self.risk_manager.config.max_position_pct:.2%}, "
+                        f"max_total_exposure={self.risk_manager.config.max_total_exposure:.2%}"
+                    )
+                    return None
+            except Exception as e:
+                logger.warning(f"Risk-based sizing failed, proceed with original sizing: {e}")
 
         if quantity <= 0:
-            logger.debug(f"Cannot afford to buy {signal.symbol}")
+            logger.debug(f"Cannot afford to buy {signal.symbol} (lot_size={lot_size})")
             return None
 
         # 风控检查（在生成订单后、执行前）
@@ -637,4 +671,3 @@ class TradingEngine:
             f"equity={self.portfolio.total_equity:.2f}, "
             f"trades={len(self.trades)})"
         )
-

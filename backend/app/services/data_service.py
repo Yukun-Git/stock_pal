@@ -1,124 +1,88 @@
-"""Stock data fetching service using AkShare."""
+"""Stock data fetching service.
 
-import akshare as ak
+使用可配置的数据适配器获取股票数据。
+支持多种数据源：AkShare、YFinance等。
+"""
+
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+from flask import current_app
+
+from app.adapters import DataAdapterFactory
 
 
 class DataService:
-    """Service for fetching stock market data."""
+    """股票数据服务.
+
+    使用配置的数据适配器获取数据，支持动态切换数据源。
+    """
 
     @staticmethod
-    def _get_hk_stock_data(
-        symbol: str,
-        start_date: str,
-        end_date: str
-    ) -> pd.DataFrame:
-        """Get historical K-line data for Hong Kong stocks.
-
-        Args:
-            symbol: HK stock code (e.g., '00700.HK')
-            start_date: Start date in 'YYYYMMDD' format
-            end_date: End date in 'YYYYMMDD' format
+    def _get_adapter():
+        """获取当前配置的数据适配器实例.
 
         Returns:
-            DataFrame with columns: date, open, high, low, close, volume
+            数据适配器实例
+
+        Raises:
+            ValueError: 如果配置的适配器不存在
         """
-        try:
-            # Remove .HK suffix and format for AkShare
-            base_symbol = symbol.replace('.HK', '')
+        # 从Flask配置中获取数据源名称
+        adapter_name = current_app.config.get('DATA_SOURCE', 'yfinance')
 
-            # Convert date format from YYYYMMDD to YYYY-MM-DD
-            start = datetime.strptime(start_date, '%Y%m%d').strftime('%Y%m%d')
-            end = datetime.strptime(end_date, '%Y%m%d').strftime('%Y%m%d')
-
-            # Fetch HK stock data from AkShare
-            df = ak.stock_hk_hist(
-                symbol=base_symbol,
-                period='daily',
-                start_date=start,
-                end_date=end,
-                adjust='qfq'
-            )
-
-            if df.empty:
-                raise Exception(f"No data found for HK stock {symbol}")
-
-            # Rename columns to match A-share format
-            df = df.rename(columns={
-                '日期': 'date',
-                '开盘': 'open',
-                '收盘': 'close',
-                '最高': 'high',
-                '最低': 'low',
-                '成交量': 'volume',
-                '成交额': 'amount',
-                '涨跌幅': 'pct_change',
-                '涨跌额': 'change',
-                '换手率': 'turnover'
-            })
-
-            # Calculate amplitude if high and low are available
-            if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
-                # Calculate amplitude as (high - low) / previous close * 100
-                # For first row, use (high - low) / low * 100
-                prev_close = df['close'].shift(1)
-                df['amplitude'] = ((df['high'] - df['low']) / prev_close * 100).round(2)
-                # Fill first row
-                df.loc[0, 'amplitude'] = ((df.loc[0, 'high'] - df.loc[0, 'low']) / df.loc[0, 'low'] * 100) if df.loc[0, 'low'] > 0 else 0
-            else:
-                # Set amplitude to None if we can't calculate it
-                df['amplitude'] = None
-
-            # Convert date to datetime
-            df['date'] = pd.to_datetime(df['date'])
-
-            # Sort by date
-            df = df.sort_values('date').reset_index(drop=True)
-
-            return df
-
-        except Exception as e:
-            raise Exception(f"Failed to fetch HK stock data: {str(e)}")
+        # 使用工厂创建适配器
+        return DataAdapterFactory.create(adapter_name)
 
     @staticmethod
     def get_stock_list(market: str = 'A') -> pd.DataFrame:
-        """Get list of stocks.
+        """获取股票列表.
+
+        注意: 某些数据源可能不支持此功能。
 
         Args:
-            market: Market type ('A' for A-share)
+            market: 市场类型 ('A' for A-share)
 
         Returns:
             DataFrame with stock list
         """
         try:
-            # Get A-share stock list
-            stock_list = ak.stock_info_a_code_name()
-            return stock_list
+            adapter = DataService._get_adapter()
+
+            # 尝试搜索空字符串获取全部（仅AkShare支持）
+            if adapter.name == 'AkShare':
+                import akshare as ak
+                return ak.stock_info_a_code_name()
+            else:
+                # 其他适配器返回空DataFrame
+                return pd.DataFrame(columns=['code', 'name'])
+
         except Exception as e:
             raise Exception(f"Failed to fetch stock list: {str(e)}")
 
     @staticmethod
     def search_stock(keyword: str) -> list:
-        """Search stocks by code or name.
+        """搜索股票.
 
         Args:
-            keyword: Stock code or name keyword
+            keyword: 股票代码或名称关键词
 
         Returns:
-            List of matching stocks
+            匹配的股票列表
         """
         try:
-            stock_list = ak.stock_info_a_code_name()
-            # Search by code or name
-            mask = (
-                stock_list['code'].str.contains(keyword, case=False, na=False) |
-                stock_list['name'].str.contains(keyword, case=False, na=False)
-            )
-            result = stock_list[mask].head(20)  # Limit to 20 results
-            return result.to_dict('records')
+            adapter = DataService._get_adapter()
+            return adapter.search_stock(keyword)
+
         except Exception as e:
+            # 如果当前适配器不支持搜索，尝试降级到AkShare
+            if adapter.name != 'AkShare':
+                try:
+                    akshare_adapter = DataAdapterFactory.create('akshare')
+                    return akshare_adapter.search_stock(keyword)
+                except:
+                    pass
+
             raise Exception(f"Failed to search stocks: {str(e)}")
 
     @staticmethod
@@ -128,69 +92,27 @@ class DataService:
         end_date: Optional[str] = None,
         adjust: str = 'qfq'
     ) -> pd.DataFrame:
-        """Get historical K-line data for a stock.
+        """获取股票历史数据.
 
         Args:
-            symbol: Stock code (e.g., '000001', '600000', '600519.SH', '00700.HK')
-            start_date: Start date in 'YYYYMMDD' format
-            end_date: End date in 'YYYYMMDD' format
-            adjust: Adjustment type ('qfq'=forward, 'hfq'=backward, ''=none)
+            symbol: 股票代码 (e.g., '000001', '600519.SH', '00700.HK')
+            start_date: 开始日期 'YYYYMMDD' 格式 (可选)
+            end_date: 结束日期 'YYYYMMDD' 格式 (可选)
+            adjust: 复权类型 ('qfq'=前复权, 'hfq'=后复权, ''=不复权)
 
         Returns:
-            DataFrame with columns: date, open, high, low, close, volume
+            DataFrame包含标准列: date, open, high, low, close, volume等
         """
         try:
-            # Default to last 2 years if dates not provided
+            # 设置默认日期
             if not end_date:
                 end_date = datetime.now().strftime('%Y%m%d')
             if not start_date:
                 start_date = (datetime.now() - timedelta(days=730)).strftime('%Y%m%d')
 
-            # Handle HK stocks
-            if '.HK' in symbol:
-                return DataService._get_hk_stock_data(symbol, start_date, end_date)
-
-            # Handle A-share stocks
-            # Remove exchange suffix for AkShare API (.SH, .SZ)
-            base_symbol = symbol.split('.')[0]
-
-            # Fetch data from AkShare
-            df = ak.stock_zh_a_hist(
-                symbol=base_symbol,
-                period='daily',
-                start_date=start_date,
-                end_date=end_date,
-                adjust=adjust
-            )
-
-            if df.empty:
-                raise Exception(f"No data found for stock {symbol}")
-
-            # Rename columns to English
-            df = df.rename(columns={
-                '日期': 'date',
-                '股票代码': 'stock_code',
-                '开盘': 'open',
-                '收盘': 'close',
-                '最高': 'high',
-                '最低': 'low',
-                '成交量': 'volume',
-                '成交额': 'amount',
-                '振幅': 'amplitude',
-                '涨跌幅': 'pct_change',
-                '涨跌额': 'change',
-                '换手率': 'turnover'
-            })
-
-            # Drop stock_code column as it's redundant (we already have symbol)
-            if 'stock_code' in df.columns:
-                df = df.drop(columns=['stock_code'])
-
-            # Convert date to datetime
-            df['date'] = pd.to_datetime(df['date'])
-
-            # Sort by date
-            df = df.sort_values('date').reset_index(drop=True)
+            # 获取适配器并获取数据
+            adapter = DataService._get_adapter()
+            df = adapter.get_stock_data(symbol, start_date, end_date, adjust)
 
             return df
 
@@ -199,60 +121,20 @@ class DataService:
 
     @staticmethod
     def get_stock_info(symbol: str) -> dict:
-        """Get basic information about a stock.
+        """获取股票基本信息.
 
         Args:
-            symbol: Stock code
+            symbol: 股票代码
 
         Returns:
-            Dictionary with stock information
+            包含股票信息的字典 (code, name, market)
         """
         try:
-            # Handle HK stocks
-            if '.HK' in symbol:
-                base_code = symbol.split('.')[0]
-                try:
-                    # Try to fetch HK stock name from AkShare
-                    hk_spot = ak.stock_hk_spot()
-                    hk_stock = hk_spot[hk_spot['代码'] == base_code]
-                    if not hk_stock.empty:
-                        return {
-                            'code': symbol,
-                            'name': hk_stock.iloc[0]['名称'],
-                            'market': 'HK'
-                        }
-                except:
-                    pass
+            adapter = DataService._get_adapter()
+            return adapter.get_stock_info(symbol)
 
-                # Fallback for HK stocks
-                return {
-                    'code': symbol,
-                    'name': f'HK Stock {base_code}',
-                    'market': 'HK'
-                }
-
-            # Handle A-share stocks
-            # Remove exchange suffix (.SH, .SZ) for AkShare query
-            base_symbol = symbol.split('.')[0]
-
-            stock_list = ak.stock_info_a_code_name()
-            stock = stock_list[stock_list['code'] == base_symbol]
-
-            if stock.empty:
-                # Return generic info if not found
-                return {
-                    'code': symbol,
-                    'name': f'Stock {symbol}',
-                    'market': 'A-share'
-                }
-
-            return {
-                'code': symbol,
-                'name': stock.iloc[0]['name'],
-                'market': 'A-share'
-            }
         except Exception as e:
-            # Return generic info on error instead of raising exception
+            # 返回通用信息而不是抛出异常
             return {
                 'code': symbol,
                 'name': f'Stock {symbol}',
@@ -298,14 +180,13 @@ class DataService:
             'volume': 'sum'
         }
 
-        # 如果有其他列（如amount, pct_change等），也包含进来
+        # 如果有其他列（如amount等），也包含进来
         for col in df.columns:
             if col not in ohlc_dict:
                 if col in ['amount']:
                     ohlc_dict[col] = 'sum'
                 elif col in ['amplitude', 'pct_change', 'change', 'turnover']:
-                    # 这些字段在重采样时不太有意义，可以计算或忽略
-                    # 这里选择忽略
+                    # 这些字段在重采样时不太有意义，忽略
                     pass
 
         # 执行重采样

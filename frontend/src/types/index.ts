@@ -90,6 +90,12 @@ export interface BacktestResult {
   avg_holding_period?: number;        // 平均持仓天数
   turnover_rate?: number;             // 换手率（年化）
 
+  // ===== 基准对比指标（新增）=====
+  alpha?: number;                     // Alpha（超额收益）
+  beta?: number;                      // Beta（系统风险）
+  information_ratio?: number;         // 信息比率
+  tracking_error?: number;            // 跟踪误差
+
   // ===== 风控统计 =====
   risk_stats?: RiskStats;             // 风控统计数据
 }
@@ -102,6 +108,14 @@ export interface BacktestRequest {
   initial_capital?: number;
   commission_rate?: number;
   strategy_params?: Record<string, any>;
+  benchmark?: string;                // 新增：基准指数ID（可选）
+}
+
+export interface BenchmarkOption {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
 }
 
 export interface StrategyAnalysis {
@@ -133,6 +147,21 @@ export interface BacktestMetadata {
   risk_events?: RiskEvent[];         // 新增：风控事件列表
 }
 
+export interface BenchmarkMetrics {
+  total_return: number;              // 总收益率
+  cagr: number;                      // 年化收益率
+  sharpe_ratio: number;              // 夏普比率
+  max_drawdown: number;              // 最大回撤
+  volatility: number;                // 波动率
+}
+
+export interface Benchmark {
+  id: string;                        // 基准ID（如CSI300）
+  name: string;                      // 基准名称（如沪深300）
+  equity_curve: EquityPoint[];       // 基准权益曲线
+  metrics: BenchmarkMetrics;         // 基准指标
+}
+
 export interface BacktestResponse {
   stock: Stock;
   strategy: string | {
@@ -148,6 +177,7 @@ export interface BacktestResponse {
   sell_points: Array<{ date: string; price: number }>;
   signal_analysis?: SignalAnalysis;
   metadata?: BacktestMetadata;       // 新增：元数据
+  benchmark?: Benchmark;             // 新增：基准数据
 }
 
 // ===== 风控管理相关类型 =====

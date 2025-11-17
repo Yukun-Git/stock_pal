@@ -6,7 +6,8 @@ from app.api.v1.backtest import (
     BacktestResource,
     StrategyListResource,
     StrategyDocumentationResource,
-    BacktestOptimizeResource
+    BacktestOptimizeResource,
+    BenchmarkListResource
 )
 
 
@@ -26,3 +27,4 @@ def register_routes(api: Api):
     api.add_resource(StrategyDocumentationResource, '/api/v1/strategies/<string:strategy_id>/documentation')
     api.add_resource(BacktestResource, '/api/v1/backtest')
     api.add_resource(BacktestOptimizeResource, '/api/v1/backtest/optimize')
+    api.add_resource(BenchmarkListResource, '/api/v1/benchmarks')
