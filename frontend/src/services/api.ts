@@ -7,6 +7,7 @@ import type {
   BacktestResponse,
   BenchmarkOption,
 } from '@/types';
+import { getAuthToken, clearAuth } from '@/utils/auth';
 
 // Use relative path to leverage Vite proxy in development
 // In production, this will be replaced by nginx proxy
@@ -20,11 +21,37 @@ const api = axios.create({
   },
 });
 
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = getAuthToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     console.error('API Error:', error);
+
+    // Handle 401 Unauthorized errors
+    if (error.response?.status === 401) {
+      // Clear auth data
+      clearAuth();
+
+      // Redirect to login page
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+
     return Promise.reject(error);
   }
 );

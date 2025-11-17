@@ -55,11 +55,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 导入 Mock 数据（可选）
 -- ----------------------------------------------------------------------------
 
--- 如果 mock_data 目录下有数据文件，在此导入
--- \echo '>>> 正在导入 Mock 数据...'
--- \i /docker-entrypoint-initdb.d/mock_data/sample_data.sql
--- \echo '>>> Mock 数据导入完成'
--- \echo ''
+-- 导入初始用户数据
+\echo '>>> 正在导入 Mock 数据...'
+\i /docker-entrypoint-initdb.d/mock_data/initial_users.sql
+\echo '>>> Mock 数据导入完成'
+\echo ''
 
 -- ----------------------------------------------------------------------------
 -- 验证数据库结构

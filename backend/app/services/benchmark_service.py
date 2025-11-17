@@ -26,7 +26,8 @@ class BenchmarkService:
     # 支持的基准指数映射
     BENCHMARK_MAP = {
         'CSI300': {
-            'symbol': '沪深300',  # akshare 格式
+            'symbol': '沪深300',  # akshare 名称
+            'ak_symbol': 'sh000300',  # akshare stock_zh_index_daily 代码
             'yf_symbol': '000300.SS',  # yfinance 格式
             'use_yfinance': True,  # 沪深300用yfinance（数据稳定）
             'name': '沪深300',
@@ -34,6 +35,7 @@ class BenchmarkService:
         },
         'CSI500': {
             'symbol': '中证500',
+            'ak_symbol': 'sh000905',
             'yf_symbol': '000905.SS',
             'use_yfinance': False,  # yfinance数据不完整
             'name': '中证500',
@@ -41,6 +43,7 @@ class BenchmarkService:
         },
         'GEM': {
             'symbol': '创业板指',
+            'ak_symbol': 'sz399006',
             'yf_symbol': '399006.SZ',
             'use_yfinance': False,
             'name': '创业板指',
@@ -48,6 +51,7 @@ class BenchmarkService:
         },
         'STAR50': {
             'symbol': '科创50',
+            'ak_symbol': 'sh000688',
             'yf_symbol': '000688.SS',
             'use_yfinance': False,
             'name': '科创50',
@@ -198,52 +202,57 @@ class BenchmarkService:
         start_date: str,
         end_date: str
     ) -> pd.DataFrame:
-        """通过 akshare 获取基准数据"""
-        symbol = BenchmarkService.BENCHMARK_MAP[benchmark_id]['symbol']
+        """通过 akshare 获取基准数据
+
+        使用 stock_zh_index_daily API 获取指数全量历史数据，然后过滤日期范围。
+        这比 index_zh_a_hist 更稳定可靠。
+        """
+        ak_symbol = BenchmarkService.BENCHMARK_MAP[benchmark_id]['ak_symbol']
         name = BenchmarkService.BENCHMARK_MAP[benchmark_id]['name']
 
-        logger.info(f"Fetching {name} via akshare: {symbol}")
+        logger.info(f"Fetching {name} via akshare: {ak_symbol}")
 
-        # 使用 akshare 获取指数历史数据
-        df = ak.index_zh_a_hist(
-            symbol=symbol,
-            period='daily',
-            start_date=start_date,
-            end_date=end_date
-        )
+        try:
+            # 使用 stock_zh_index_daily 获取全量数据
+            df = ak.stock_zh_index_daily(symbol=ak_symbol)
 
-        if df is None or df.empty:
-            raise Exception(f"No data from akshare for {symbol}")
+            if df is None or df.empty:
+                raise Exception(f"No data from akshare for {ak_symbol}")
 
-        # 标准化列名
-        column_mapping = {
-            '日期': 'date',
-            '开盘': 'open',
-            '收盘': 'close',
-            '最高': 'high',
-            '最低': 'low',
-            '成交量': 'volume',
-        }
+            # 确保日期列为datetime类型
+            df['date'] = pd.to_datetime(df['date'])
 
-        df = df.rename(columns=column_mapping)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.sort_values('date').reset_index(drop=True)
+            # 过滤日期范围
+            start_dt = pd.to_datetime(start_date, format='%Y%m%d')
+            end_dt = pd.to_datetime(end_date, format='%Y%m%d')
+            df = df[(df['date'] >= start_dt) & (df['date'] <= end_dt)]
 
-        # 选择需要的列
-        required_cols = ['date', 'open', 'high', 'low', 'close']
-        optional_cols = ['volume']
+            if df.empty:
+                raise Exception(f"No data in date range {start_date} to {end_date}")
 
-        for col in required_cols:
-            if col not in df.columns:
-                raise Exception(f"Missing required column: {col}")
+            # 排序
+            df = df.sort_values('date').reset_index(drop=True)
 
-        for col in optional_cols:
-            if col not in df.columns:
-                df[col] = None
+            # 选择需要的列（stock_zh_index_daily已经返回标准列名）
+            required_cols = ['date', 'open', 'high', 'low', 'close']
+            optional_cols = ['volume']
 
-        df = df[required_cols + optional_cols]
+            for col in required_cols:
+                if col not in df.columns:
+                    raise Exception(f"Missing required column: {col}")
 
-        return df
+            for col in optional_cols:
+                if col not in df.columns:
+                    df[col] = 0  # 某些指数可能没有成交量数据
+
+            df = df[required_cols + optional_cols]
+
+            logger.info(f"Successfully fetched {len(df)} rows for {name}")
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to fetch {name} data: {str(e)}")
+            raise
 
     @staticmethod
     def calculate_benchmark_returns(

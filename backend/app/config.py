@@ -10,6 +10,11 @@ class Config:
     # Flask
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+    # JWT
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-jwt-secret-key-change-in-production')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 24)))
+    JWT_ALGORITHM = 'HS256'
+
     # CORS
     CORS_ORIGINS = os.environ.get(
         'CORS_ORIGINS',
@@ -20,6 +25,12 @@ class Config:
 
     # API
     API_VERSION = os.environ.get('API_VERSION', 'v1')
+
+    # Database
+    DATABASE_URL = os.environ.get(
+        'DATABASE_URL',
+        'postgresql://stockpal:stockpal123@localhost:5433/stock_pal_db'
+    )
 
     # Data Source
     DATA_SOURCE = os.environ.get('DATA_SOURCE', 'akshare')

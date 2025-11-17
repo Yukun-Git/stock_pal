@@ -3,6 +3,7 @@
 from flask import Flask
 from flask_cors import CORS
 from flask_restful import Api
+from flask_jwt_extended import JWTManager
 
 from app.config import config
 
@@ -24,12 +25,19 @@ def create_app(config_name='development'):
     # Initialize extensions
     CORS(app, origins=app.config['CORS_ORIGINS'])
 
+    # Initialize JWT
+    jwt = JWTManager(app)
+
     # Create API instance
     api = Api(app)
 
-    # Register blueprints
+    # Register REST API routes
     from app.api.v1 import register_routes
     register_routes(api)
+
+    # Register auth blueprint
+    from app.api.v1.auth import auth_bp
+    app.register_blueprint(auth_bp)
 
     # Health check endpoint
     @app.route('/health')
