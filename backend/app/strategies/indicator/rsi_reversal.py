@@ -57,6 +57,22 @@ class RSIReversalStrategy(BaseStrategy):
 
         return base_params + custom_params
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取RSI策略所需的最小数据天数.
+
+        Args:
+            params: 策略参数，包含 period
+
+        Returns:
+            最小所需数据天数 = RSI周期 + 10天缓冲
+        """
+        if params is None:
+            params = {}
+
+        period = params.get('period', 6)
+        return period + 10
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

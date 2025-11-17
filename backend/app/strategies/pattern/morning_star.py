@@ -40,6 +40,16 @@ class MorningStarStrategy(BaseStrategy):
 
         return base_params + custom_params
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取早晨之星策略所需的最小数据天数.
+
+        Returns:
+            早晨之星是K线形态策略，理论上只需3根K线，
+            但为了判断趋势，建议至少10天数据
+        """
+        return 10
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

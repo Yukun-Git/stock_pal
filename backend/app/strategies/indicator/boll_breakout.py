@@ -20,6 +20,15 @@ class BollBreakoutStrategy(BaseStrategy):
     description = '价格突破下轨买入，突破上轨卖出'
     category = 'indicator'
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取布林带策略所需的最小数据天数.
+
+        Returns:
+            布林带默认使用20日均线，最少需要30天数据（20 + 10天缓冲）
+        """
+        return 30
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

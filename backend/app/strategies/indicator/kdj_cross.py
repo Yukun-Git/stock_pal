@@ -48,6 +48,15 @@ class KDJCrossStrategy(BaseStrategy):
 
         return base_params + custom_params
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取KDJ策略所需的最小数据天数.
+
+        Returns:
+            KDJ指标计算周期为9天，最少需要14天数据（9 + 5天缓冲）
+        """
+        return 14
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

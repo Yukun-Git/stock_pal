@@ -76,9 +76,9 @@ export default function RiskComparisonDrawer({
     {
       key: 'profit_factor',
       metric: '盈亏比',
-      withoutRisk: withoutRiskResult?.profit_factor.toFixed(2) || '-',
-      withRisk: withRiskResult.profit_factor.toFixed(2),
-      diff: calculateDiff(withRiskResult.profit_factor, withoutRiskResult?.profit_factor),
+      withoutRisk: withoutRiskResult?.profit_factor?.toFixed(2) || '-',
+      withRisk: withRiskResult.profit_factor?.toFixed(2) || '-',
+      diff: calculateDiff(withRiskResult.profit_factor || 0, withoutRiskResult?.profit_factor),
     },
   ];
 

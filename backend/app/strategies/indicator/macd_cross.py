@@ -193,6 +193,23 @@ class MACDCrossStrategy(BaseStrategy):
 
         return base_params + custom_params
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取MACD策略所需的最小数据天数.
+
+        Args:
+            params: 策略参数，包含 macd_slow 和 macd_signal
+
+        Returns:
+            最小所需数据天数 = 慢线周期 + 信号线周期 + 5天缓冲
+        """
+        if params is None:
+            params = {}
+
+        macd_slow = params.get('macd_slow', 26)
+        macd_signal = params.get('macd_signal', 9)
+        return macd_slow + macd_signal + 5
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

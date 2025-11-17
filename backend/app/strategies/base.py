@@ -125,3 +125,18 @@ class BaseStrategy(ABC):
             raise ValueError(f"Strategy {cls.__name__} must define description")
         if not cls.category:
             raise ValueError(f"Strategy {cls.__name__} must define category")
+
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取策略所需的最小数据天数.
+
+        子类可以重写此方法来根据参数动态计算所需数据量。
+        默认返回40天（适用于大部分指标策略）。
+
+        Args:
+            params: 策略参数字典，用于动态计算（例如根据MA周期）
+
+        Returns:
+            最小所需数据天数
+        """
+        return 40  # 默认值，适用于MACD等常见指标

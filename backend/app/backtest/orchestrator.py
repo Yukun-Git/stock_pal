@@ -198,6 +198,7 @@ class BacktestOrchestrator:
         # 获取基准数据（如果提供了 benchmark_id）
         benchmark_returns = None
         benchmark_data = None
+        benchmark_error = None
         if benchmark_id:
             try:
                 # 获取日期范围
@@ -231,6 +232,7 @@ class BacktestOrchestrator:
                 # 基准数据获取失败，记录警告但继续回测
                 import logging
                 logging.warning(f"Failed to fetch benchmark data: {str(e)}")
+                benchmark_error = f"基准数据获取失败: {str(e)}"
 
         # 计算性能指标
         metrics = self.metrics_calculator.calculate_all_metrics(
@@ -265,6 +267,9 @@ class BacktestOrchestrator:
                 'id': benchmark_data['benchmark_id'],
                 'name': benchmark_data['benchmark_name']
             }
+        elif benchmark_error:
+            # 如果基准数据获取失败，记录错误信息
+            self.metadata['benchmark_error'] = benchmark_error
 
         # 构建结果
         result = BacktestResult(

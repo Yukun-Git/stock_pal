@@ -11,6 +11,7 @@ from app.services.strategy_service import StrategyService
 from app.services.strategy_combiner import StrategyCombiner
 from app.services.signal_analysis_service import SignalAnalysisService
 from app.services.benchmark_service import BenchmarkService
+from app.strategies.registry import StrategyRegistry
 
 # 新回测引擎
 from app.backtest.orchestrator import BacktestOrchestrator
@@ -187,13 +188,34 @@ class BacktestResource(Resource):
                             f'提示：请确认股票代码，或尝试使用A股股票（如600519）。'
                 }, 400
 
-            # Check if we have enough data for backtesting
-            min_required_days = 60  # MACD needs at least ~30-40 days, we require 60 to be safe
+            # Check if we have enough data for backtesting (dynamic based on strategies)
+            # Get per-strategy params for calculating min required days
+            per_strategy_params = data.get('per_strategy_params', {})
+            strategy_params = data.get('strategy_params', {})
+
+            # Calculate minimum required days for each selected strategy
+            min_required_days_list = []
+            for strategy_id in strategy_ids:
+                try:
+                    strategy_class = StrategyRegistry.get(strategy_id)
+                    # Get strategy-specific params or fall back to global params
+                    params = per_strategy_params.get(strategy_id, strategy_params)
+                    min_days = strategy_class.get_min_required_days(params)
+                    min_required_days_list.append(min_days)
+                except Exception:
+                    # If strategy not found or error, use default 40 days
+                    min_required_days_list.append(40)
+
+            # Use the maximum required days among all strategies
+            min_required_days = max(min_required_days_list) if min_required_days_list else 40
+
             if len(df) < min_required_days:
+                strategy_names = [StrategyRegistry.get(sid).name for sid in strategy_ids]
+                strategies_text = '、'.join(strategy_names) if len(strategy_names) <= 3 else f"{', '.join(strategy_names[:3])} 等"
                 return {
                     'success': False,
                     'error': f'数据量不足：仅获取到 {len(df)} 条记录，'
-                            f'至少需要 {min_required_days} 条记录才能进行回测。'
+                            f'当前策略（{strategies_text}）至少需要 {min_required_days} 条记录才能进行回测。'
                             f'请扩大日期范围或检查股票数据。'
                 }, 400
 

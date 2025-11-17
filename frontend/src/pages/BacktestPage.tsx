@@ -486,7 +486,7 @@ export default function BacktestPage() {
           initialValues={{
             symbol: '01810.HK',
             timeRange: '3m',
-            initialCapital: 100000,
+            initialCapital: 1000000,
             commissionRate: 0.0003,
           }}
         >
@@ -952,6 +952,26 @@ export default function BacktestPage() {
               results={result.results}
               benchmark={result.benchmark}
             />
+          )}
+
+          {/* Benchmark Error Alert - Show if benchmark fetch failed */}
+          {result.metadata?.benchmark_error && (
+            <Card style={{ marginTop: 24, backgroundColor: '#fff7e6', border: '1px solid #ffd591' }}>
+              <Row align="middle" gutter={16}>
+                <Col>
+                  <Text style={{ fontSize: 16 }}>⚠️</Text>
+                </Col>
+                <Col flex="auto">
+                  <Text strong style={{ color: '#d46b08' }}>基准对比功能暂时不可用</Text>
+                  <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12 }}>
+                    {result.metadata.benchmark_error}
+                  </div>
+                  <div style={{ marginTop: 8, color: '#8c8c8c', fontSize: 12 }}>
+                    提示：这通常是由于网络问题或数据源暂时不可用导致的。回测结果本身不受影响，只是无法显示与基准指数的对比数据。
+                  </div>
+                </Col>
+              </Row>
+            </Card>
           )}
 
           {/* K-Line Chart */}

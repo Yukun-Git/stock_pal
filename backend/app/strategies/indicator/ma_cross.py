@@ -50,6 +50,22 @@ class MACrossStrategy(BaseStrategy):
 
         return base_params + custom_params
 
+    @classmethod
+    def get_min_required_days(cls, params: Dict[str, Any] = None) -> int:
+        """获取MA策略所需的最小数据天数.
+
+        Args:
+            params: 策略参数，包含 slow_period
+
+        Returns:
+            最小所需数据天数 = 慢速均线周期 + 10天缓冲
+        """
+        if params is None:
+            params = {}
+
+        slow_period = params.get('slow_period', 20)
+        return slow_period + 10
+
     def generate_signals(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """生成交易信号.
 

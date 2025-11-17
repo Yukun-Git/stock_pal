@@ -26,24 +26,32 @@ class BenchmarkService:
         'CSI300': {
             'code': '000300',
             'em_symbol': 'sh000300',  # 东方财富接口需要的格式
+            'hist_symbol': '沪深300',
+            'tx_symbol': 'sh000300',
             'name': '沪深300',
             'description': '大盘蓝筹指数'
         },
         'CSI500': {
             'code': '000905',
             'em_symbol': 'sh000905',
+            'hist_symbol': '中证500',
+            'tx_symbol': 'sh000905',
             'name': '中证500',
             'description': '中盘成长指数'
         },
         'GEM': {
             'code': '399006',
             'em_symbol': 'sz399006',
+            'hist_symbol': '创业板指',
+            'tx_symbol': 'sz399006',
             'name': '创业板指',
             'description': '创业板综合指数'
         },
         'STAR50': {
             'code': '000688',
             'em_symbol': 'sh000688',
+            'hist_symbol': '科创50',
+            'tx_symbol': 'sh000688',
             'name': '科创50',
             'description': '科创板龙头指数'
         }
@@ -117,13 +125,113 @@ class BenchmarkService:
             # 从AkShare获取指数数据 (使用东方财富接口)
             logger.info(f"Fetching benchmark data: {benchmark_id} ({em_symbol}), {start_date} - {end_date}")
 
-            df = ak.stock_zh_index_daily_em(symbol=em_symbol)
+            df = None
+            fetch_errors = []
 
-            if df.empty:
-                raise Exception(f"No data found for benchmark {benchmark_id}")
+            # 尝试东方财富接口
+            try:
+                df = ak.stock_zh_index_daily_em(symbol=em_symbol)
+                if df is not None and not df.empty:
+                    logger.info(f"Fetched benchmark data from EM interface: {len(df)} rows")
+            except Exception as em_error:
+                logger.warning(f"EM interface failed: {str(em_error)}, trying fallback...")
+                fetch_errors.append(f"EM interface error: {str(em_error)}")
 
-            # 确保列名正确（stock_zh_index_daily_em返回的列已经是标准格式）
-            # 列：date, open, close, high, low, volume, amount
+            # 如果东方财富接口失败，尝试新浪接口作为降级
+            if df is None or df.empty:
+                sina_symbols = [
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
+                ]
+                for sina_symbol in sina_symbols:
+                    if not sina_symbol:
+                        continue
+                    try:
+                        logger.info(f"Trying fallback Sina interface for {benchmark_id} ({sina_symbol})")
+                        df = ak.stock_zh_index_daily(symbol=sina_symbol)
+                        if df is not None and not df.empty:
+                            logger.info(f"Fetched benchmark data from Sina interface ({sina_symbol}): {len(df)} rows")
+                            break
+                        fetch_errors.append(f"Sina interface returned empty data ({sina_symbol})")
+                    except Exception as sina_error:
+                        logger.warning(f"Sina interface failed for {sina_symbol}: {str(sina_error)}")
+                        fetch_errors.append(f"Sina interface error ({sina_symbol}): {str(sina_error)}")
+                else:
+                    df = None  # 明确置空
+
+            # 如果新浪接口仍然失败，尝试指数历史接口
+            if df is None or df.empty:
+                hist_symbols = [
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('hist_symbol'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('hist_symbol_alt'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
+                ]
+                hist_symbols = [symbol for symbol in hist_symbols if symbol]
+                hist_success = False
+                for hist_symbol in hist_symbols:
+                    try:
+                        logger.info(f"Trying fallback index_zh_a_hist interface for {benchmark_id} ({hist_symbol})")
+                        df = ak.index_zh_a_hist(
+                            symbol=hist_symbol,
+                            period='daily',
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                        if df is not None and not df.empty:
+                            logger.info(f"Fetched benchmark data from index_zh_a_hist ({hist_symbol}): {len(df)} rows")
+                            hist_success = True
+                            break
+                        fetch_errors.append(f"Index history interface returned empty data ({hist_symbol})")
+                    except Exception as hist_error:
+                        logger.warning(f"Index history interface failed for {hist_symbol}: {str(hist_error)}")
+                        fetch_errors.append(f"Index history interface error ({hist_symbol}): {str(hist_error)}")
+                if not hist_success:
+                    df = None
+
+            # 如果指数历史接口仍然失败，尝试腾讯接口
+            if df is None or df.empty:
+                tx_symbols = [
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('tx_symbol'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
+                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
+                ]
+                tx_symbols = [symbol for symbol in tx_symbols if symbol]
+                tx_success = False
+                for tx_symbol in tx_symbols:
+                    try:
+                        logger.info(f"Trying fallback Tencent interface for {benchmark_id} ({tx_symbol})")
+                        df = ak.stock_zh_index_daily_tx(symbol=tx_symbol)
+                        if df is not None and not df.empty:
+                            logger.info(f"Fetched benchmark data from Tencent interface ({tx_symbol}): {len(df)} rows")
+                            tx_success = True
+                            break
+                        fetch_errors.append(f"Tencent interface returned empty data ({tx_symbol})")
+                    except Exception as tx_error:
+                        logger.warning(f"Tencent interface failed for {tx_symbol}: {str(tx_error)}")
+                        fetch_errors.append(f"Tencent interface error ({tx_symbol}): {str(tx_error)}")
+                if not tx_success:
+                    df = None
+
+            if df is None or df.empty:
+                error_details = '; '.join(fetch_errors) if fetch_errors else 'unknown reason'
+                raise Exception(f"No data found for benchmark {benchmark_id}. Details: {error_details}")
+
+            # 确保列名正确
+            # 东方财富接口: date, open, close, high, low, volume, amount
+            # 新浪接口: date, open, close, high, low, volume (或中文列名)
+
+            # 处理中文列名（新浪接口可能返回中文）
+            if '日期' in df.columns:
+                df = df.rename(columns={
+                    '日期': 'date',
+                    '开盘': 'open',
+                    '收盘': 'close',
+                    '最高': 'high',
+                    '最低': 'low',
+                    '成交量': 'volume',
+                    '成交额': 'amount'
+                })
 
             # 转换日期格式
             df['date'] = pd.to_datetime(df['date'])
@@ -136,8 +244,21 @@ class BenchmarkService:
             # 排序
             df = df.sort_values('date').reset_index(drop=True)
 
-            # 选择需要的列
-            df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+            # 选择需要的列（确保列存在）
+            required_cols = ['date', 'open', 'high', 'low', 'close']
+            optional_cols = ['volume']
+
+            # 确保必需列存在
+            for col in required_cols:
+                if col not in df.columns:
+                    raise Exception(f"Missing required column: {col}")
+
+            # 添加可选列（如果不存在则填充None）
+            for col in optional_cols:
+                if col not in df.columns:
+                    df[col] = None
+
+            df = df[required_cols + optional_cols]
 
             if df.empty:
                 raise Exception(f"No data in date range for benchmark {benchmark_id}")

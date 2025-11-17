@@ -13,7 +13,7 @@ services:
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql  # 初始化脚本（可选）
+      - ./sql:/docker-entrypoint-initdb.d  # 挂载 SQL 初始化脚本目录
     ports:
       - "5432:5432"  # PostgreSQL 标准端口
     networks:
@@ -49,7 +49,6 @@ services:
       - CACHE_EXPIRY=3600
       - DEFAULT_INITIAL_CAPITAL=100000
       - DEFAULT_COMMISSION_RATE=0.0003
-      - DB_PATH=/app/data/stock_cache.db
       # PostgreSQL 配置
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -57,7 +56,6 @@ services:
       - POSTGRES_PASSWORD=stockpal_dev_2024
       - POSTGRES_DB=stockpal
     volumes:
-      - ./data:/app/data  # Persist SQLite database to host
       - ./doc:/app/doc    # Mount documentation directory
       - ./backend/app:/app/app  # Mount backend code for development
       - ./backend/tests:/app/tests  # Mount tests for development

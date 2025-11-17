@@ -1,6 +1,6 @@
 # Makefile for Stock Backtest System Docker Management
 
-.PHONY: help build up down restart logs ps clean rebuild dev prod
+.PHONY: help build up down restart logs ps clean rebuild dev prod reset-db
 
 # Default target
 .DEFAULT_GOAL := help
@@ -103,3 +103,15 @@ lint-backend: ## Run backend code linting
 
 format-backend: ## Format backend code
 	docker-compose exec backend black app/
+
+reset-db: ## Reset database (WARNING: deletes all data)
+	@echo "$(RED)WARNING: This will delete all data in the database!$(NC)"
+	@POSTGRES_HOST=localhost ./sql/init_db.sh
+
+restart-backend: ## Restart backend service only
+	@echo "$(GREEN)Restarting backend service...$(NC)"
+	docker-compose restart backend
+
+restart-frontend: ## Restart frontend service only
+	@echo "$(GREEN)Restarting frontend service...$(NC)"
+	docker-compose restart frontend
