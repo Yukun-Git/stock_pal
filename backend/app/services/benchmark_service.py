@@ -7,13 +7,15 @@
 - CSI500: 中证500（000905）
 - GEM: 创业板指（399006）
 - STAR50: 科创50（000688）
+
+注意：指数数据使用 akshare 获取，因为 yfinance 对中国指数历史数据支持较差
 """
 
-import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 import logging
+import akshare as ak
 
 logger = logging.getLogger(__name__)
 
@@ -24,34 +26,30 @@ class BenchmarkService:
     # 支持的基准指数映射
     BENCHMARK_MAP = {
         'CSI300': {
-            'code': '000300',
-            'em_symbol': 'sh000300',  # 东方财富接口需要的格式
-            'hist_symbol': '沪深300',
-            'tx_symbol': 'sh000300',
+            'symbol': '沪深300',  # akshare 格式
+            'yf_symbol': '000300.SS',  # yfinance 格式
+            'use_yfinance': True,  # 沪深300用yfinance（数据稳定）
             'name': '沪深300',
             'description': '大盘蓝筹指数'
         },
         'CSI500': {
-            'code': '000905',
-            'em_symbol': 'sh000905',
-            'hist_symbol': '中证500',
-            'tx_symbol': 'sh000905',
+            'symbol': '中证500',
+            'yf_symbol': '000905.SS',
+            'use_yfinance': False,  # yfinance数据不完整
             'name': '中证500',
             'description': '中盘成长指数'
         },
         'GEM': {
-            'code': '399006',
-            'em_symbol': 'sz399006',
-            'hist_symbol': '创业板指',
-            'tx_symbol': 'sz399006',
+            'symbol': '创业板指',
+            'yf_symbol': '399006.SZ',
+            'use_yfinance': False,
             'name': '创业板指',
             'description': '创业板综合指数'
         },
         'STAR50': {
-            'code': '000688',
-            'em_symbol': 'sh000688',
-            'hist_symbol': '科创50',
-            'tx_symbol': 'sh000688',
+            'symbol': '科创50',
+            'yf_symbol': '000688.SS',
+            'use_yfinance': False,
             'name': '科创50',
             'description': '科创板龙头指数'
         }
@@ -71,7 +69,7 @@ class BenchmarkService:
         return [
             {
                 'id': key,
-                'code': value['code'],
+                'code': value['symbol'],  # 返回给前端显示用
                 'name': value['name'],
                 'description': value['description']
             }
@@ -86,6 +84,10 @@ class BenchmarkService:
     ) -> pd.DataFrame:
         """
         获取基准指数历史数据
+
+        混合数据源策略：
+        - 沪深300：使用 yfinance（数据稳定完整）
+        - 其他指数：使用 akshare（数据全面但可能不稳定）
 
         Args:
             benchmark_id: 基准指数ID（如'CSI300'）
@@ -106,9 +108,6 @@ class BenchmarkService:
                 f"Supported: {list(BenchmarkService.BENCHMARK_MAP.keys())}"
             )
 
-        # 获取指数代码（东方财富格式）
-        em_symbol = BenchmarkService.BENCHMARK_MAP[benchmark_id]['em_symbol']
-
         # 默认日期范围
         if not end_date:
             end_date = datetime.now().strftime('%Y%m%d')
@@ -121,147 +120,20 @@ class BenchmarkService:
             logger.debug(f"Benchmark cache hit: {cache_key}")
             return BenchmarkService._cache[cache_key].copy()
 
+        benchmark_info = BenchmarkService.BENCHMARK_MAP[benchmark_id]
+        use_yfinance = benchmark_info.get('use_yfinance', False)
+
         try:
-            # 从AkShare获取指数数据 (使用东方财富接口)
-            logger.info(f"Fetching benchmark data: {benchmark_id} ({em_symbol}), {start_date} - {end_date}")
-
-            df = None
-            fetch_errors = []
-
-            # 尝试东方财富接口
-            try:
-                df = ak.stock_zh_index_daily_em(symbol=em_symbol)
-                if df is not None and not df.empty:
-                    logger.info(f"Fetched benchmark data from EM interface: {len(df)} rows")
-            except Exception as em_error:
-                logger.warning(f"EM interface failed: {str(em_error)}, trying fallback...")
-                fetch_errors.append(f"EM interface error: {str(em_error)}")
-
-            # 如果东方财富接口失败，尝试新浪接口作为降级
-            if df is None or df.empty:
-                sina_symbols = [
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
-                ]
-                for sina_symbol in sina_symbols:
-                    if not sina_symbol:
-                        continue
-                    try:
-                        logger.info(f"Trying fallback Sina interface for {benchmark_id} ({sina_symbol})")
-                        df = ak.stock_zh_index_daily(symbol=sina_symbol)
-                        if df is not None and not df.empty:
-                            logger.info(f"Fetched benchmark data from Sina interface ({sina_symbol}): {len(df)} rows")
-                            break
-                        fetch_errors.append(f"Sina interface returned empty data ({sina_symbol})")
-                    except Exception as sina_error:
-                        logger.warning(f"Sina interface failed for {sina_symbol}: {str(sina_error)}")
-                        fetch_errors.append(f"Sina interface error ({sina_symbol}): {str(sina_error)}")
-                else:
-                    df = None  # 明确置空
-
-            # 如果新浪接口仍然失败，尝试指数历史接口
-            if df is None or df.empty:
-                hist_symbols = [
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('hist_symbol'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('hist_symbol_alt'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
-                ]
-                hist_symbols = [symbol for symbol in hist_symbols if symbol]
-                hist_success = False
-                for hist_symbol in hist_symbols:
-                    try:
-                        logger.info(f"Trying fallback index_zh_a_hist interface for {benchmark_id} ({hist_symbol})")
-                        df = ak.index_zh_a_hist(
-                            symbol=hist_symbol,
-                            period='daily',
-                            start_date=start_date,
-                            end_date=end_date
-                        )
-                        if df is not None and not df.empty:
-                            logger.info(f"Fetched benchmark data from index_zh_a_hist ({hist_symbol}): {len(df)} rows")
-                            hist_success = True
-                            break
-                        fetch_errors.append(f"Index history interface returned empty data ({hist_symbol})")
-                    except Exception as hist_error:
-                        logger.warning(f"Index history interface failed for {hist_symbol}: {str(hist_error)}")
-                        fetch_errors.append(f"Index history interface error ({hist_symbol}): {str(hist_error)}")
-                if not hist_success:
-                    df = None
-
-            # 如果指数历史接口仍然失败，尝试腾讯接口
-            if df is None or df.empty:
-                tx_symbols = [
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('tx_symbol'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('em_symbol'),
-                    BenchmarkService.BENCHMARK_MAP[benchmark_id].get('code'),
-                ]
-                tx_symbols = [symbol for symbol in tx_symbols if symbol]
-                tx_success = False
-                for tx_symbol in tx_symbols:
-                    try:
-                        logger.info(f"Trying fallback Tencent interface for {benchmark_id} ({tx_symbol})")
-                        df = ak.stock_zh_index_daily_tx(symbol=tx_symbol)
-                        if df is not None and not df.empty:
-                            logger.info(f"Fetched benchmark data from Tencent interface ({tx_symbol}): {len(df)} rows")
-                            tx_success = True
-                            break
-                        fetch_errors.append(f"Tencent interface returned empty data ({tx_symbol})")
-                    except Exception as tx_error:
-                        logger.warning(f"Tencent interface failed for {tx_symbol}: {str(tx_error)}")
-                        fetch_errors.append(f"Tencent interface error ({tx_symbol}): {str(tx_error)}")
-                if not tx_success:
-                    df = None
-
-            if df is None or df.empty:
-                error_details = '; '.join(fetch_errors) if fetch_errors else 'unknown reason'
-                raise Exception(f"No data found for benchmark {benchmark_id}. Details: {error_details}")
-
-            # 确保列名正确
-            # 东方财富接口: date, open, close, high, low, volume, amount
-            # 新浪接口: date, open, close, high, low, volume (或中文列名)
-
-            # 处理中文列名（新浪接口可能返回中文）
-            if '日期' in df.columns:
-                df = df.rename(columns={
-                    '日期': 'date',
-                    '开盘': 'open',
-                    '收盘': 'close',
-                    '最高': 'high',
-                    '最低': 'low',
-                    '成交量': 'volume',
-                    '成交额': 'amount'
-                })
-
-            # 转换日期格式
-            df['date'] = pd.to_datetime(df['date'])
-
-            # 筛选日期范围
-            start_dt = pd.to_datetime(start_date, format='%Y%m%d')
-            end_dt = pd.to_datetime(end_date, format='%Y%m%d')
-            df = df[(df['date'] >= start_dt) & (df['date'] <= end_dt)]
-
-            # 排序
-            df = df.sort_values('date').reset_index(drop=True)
-
-            # 选择需要的列（确保列存在）
-            required_cols = ['date', 'open', 'high', 'low', 'close']
-            optional_cols = ['volume']
-
-            # 确保必需列存在
-            for col in required_cols:
-                if col not in df.columns:
-                    raise Exception(f"Missing required column: {col}")
-
-            # 添加可选列（如果不存在则填充None）
-            for col in optional_cols:
-                if col not in df.columns:
-                    df[col] = None
-
-            df = df[required_cols + optional_cols]
-
-            if df.empty:
-                raise Exception(f"No data in date range for benchmark {benchmark_id}")
+            if use_yfinance:
+                # 使用 yfinance
+                df = BenchmarkService._fetch_via_yfinance(
+                    benchmark_id, start_date, end_date
+                )
+            else:
+                # 使用 akshare
+                df = BenchmarkService._fetch_via_akshare(
+                    benchmark_id, start_date, end_date
+                )
 
             # 缓存结果
             BenchmarkService._cache[cache_key] = df.copy()
@@ -272,6 +144,106 @@ class BenchmarkService:
         except Exception as e:
             logger.error(f"Failed to fetch benchmark data: {str(e)}")
             raise Exception(f"Failed to fetch benchmark data for {benchmark_id}: {str(e)}")
+
+    @staticmethod
+    def _fetch_via_yfinance(
+        benchmark_id: str,
+        start_date: str,
+        end_date: str
+    ) -> pd.DataFrame:
+        """通过 yfinance 获取基准数据"""
+        import yfinance as yf
+
+        yf_symbol = BenchmarkService.BENCHMARK_MAP[benchmark_id]['yf_symbol']
+        name = BenchmarkService.BENCHMARK_MAP[benchmark_id]['name']
+
+        logger.info(f"Fetching {name} via yfinance: {yf_symbol}")
+
+        # 转换日期格式
+        start = datetime.strptime(start_date, '%Y%m%d').strftime('%Y-%m-%d')
+        end = datetime.strptime(end_date, '%Y%m%d').strftime('%Y-%m-%d')
+
+        # 获取数据
+        ticker = yf.Ticker(yf_symbol)
+        df = ticker.history(start=start, end=end, auto_adjust=True)
+
+        if df.empty:
+            raise Exception(f"No data from yfinance for {yf_symbol}")
+
+        # 标准化格式
+        df = df.reset_index()
+        df = df.rename(columns={
+            'Date': 'date',
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        })
+
+        # 确保日期格式
+        df['date'] = pd.to_datetime(df['date'])
+        if df['date'].dt.tz is not None:
+            df['date'] = df['date'].dt.tz_localize(None)
+
+        # 选择需要的列
+        df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+        df = df.sort_values('date').reset_index(drop=True)
+
+        return df
+
+    @staticmethod
+    def _fetch_via_akshare(
+        benchmark_id: str,
+        start_date: str,
+        end_date: str
+    ) -> pd.DataFrame:
+        """通过 akshare 获取基准数据"""
+        symbol = BenchmarkService.BENCHMARK_MAP[benchmark_id]['symbol']
+        name = BenchmarkService.BENCHMARK_MAP[benchmark_id]['name']
+
+        logger.info(f"Fetching {name} via akshare: {symbol}")
+
+        # 使用 akshare 获取指数历史数据
+        df = ak.index_zh_a_hist(
+            symbol=symbol,
+            period='daily',
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if df is None or df.empty:
+            raise Exception(f"No data from akshare for {symbol}")
+
+        # 标准化列名
+        column_mapping = {
+            '日期': 'date',
+            '开盘': 'open',
+            '收盘': 'close',
+            '最高': 'high',
+            '最低': 'low',
+            '成交量': 'volume',
+        }
+
+        df = df.rename(columns=column_mapping)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date').reset_index(drop=True)
+
+        # 选择需要的列
+        required_cols = ['date', 'open', 'high', 'low', 'close']
+        optional_cols = ['volume']
+
+        for col in required_cols:
+            if col not in df.columns:
+                raise Exception(f"Missing required column: {col}")
+
+        for col in optional_cols:
+            if col not in df.columns:
+                df[col] = None
+
+        df = df[required_cols + optional_cols]
+
+        return df
 
     @staticmethod
     def calculate_benchmark_returns(

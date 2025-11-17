@@ -10,9 +10,11 @@ export function formatCurrency(value: number, decimals = 2): string {
 
 /**
  * Format percentage
+ * @param value - Decimal value (e.g., 0.05 for 5%)
+ * @param decimals - Number of decimal places (default: 2)
  */
 export function formatPercent(value: number, decimals = 2): string {
-  return `${value.toFixed(decimals)}%`;
+  return `${(value * 100).toFixed(decimals)}%`;
 }
 
 /**

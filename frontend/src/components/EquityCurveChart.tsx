@@ -188,7 +188,7 @@ export default function EquityCurveChart({
       ],
     };
 
-    chart.setOption(option);
+    chart.setOption(option, true);  // true = notMerge，完全替换而不是合并
 
     const handleResize = () => {
       chart.resize();

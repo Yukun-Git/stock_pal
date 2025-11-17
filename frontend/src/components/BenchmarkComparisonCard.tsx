@@ -16,6 +16,16 @@ export default function BenchmarkComparisonCard({ results, benchmark }: Benchmar
     return null;
   }
 
+  // 检查是否有基准指标（如果没有 metrics，说明基准数据获取失败）
+  if (!benchmark.metrics) {
+    return (
+      <Card>
+        <Title level={5}>📊 基准对比</Title>
+        <Empty description="基准数据不可用" />
+      </Card>
+    );
+  }
+
   // 检查是否有基准对比指标
   const hasComparisonMetrics =
     results.alpha !== undefined &&
@@ -172,7 +182,7 @@ export default function BenchmarkComparisonCard({ results, benchmark }: Benchmar
           <strong>基准表现：</strong>
           收益率 {formatPercent(benchmark.metrics.total_return)} |
           年化 {formatPercent(benchmark.metrics.cagr)} |
-          夏普 {benchmark.metrics.sharpe_ratio.toFixed(2)} |
+          夏普 {benchmark.metrics.sharpe_ratio?.toFixed(2) || '-'} |
           最大回撤 {formatPercent(benchmark.metrics.max_drawdown)}
         </Text>
       </div>

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 所有的端口设置一定要小心，绝不能和宿主机上的其他服务产生冲突（PORT_INFO.md）。
 写详细设计文档的时候，不要包含具体的代码实现，以免文档过长。
 目前项目处于早期阶段，所有的详细设计和开发计划都不需要考虑数据迁移之类的内容。
-如果想创建一些临时性的脚本，用于做一些测试，先去看看backend/debug_scripts目录下有没有现成的。
+如果想创建一些临时性的脚本，用于做一些测试，先去看看backend/debug_scripts目录下有没有现成的。如果没有，新创建的测试脚本也要放到backend/debug_scripts目录下。
 
 ## Project Overview
 

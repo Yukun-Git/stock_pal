@@ -232,7 +232,8 @@ class BacktestOrchestrator:
                 # 基准数据获取失败，记录警告但继续回测
                 import logging
                 logging.warning(f"Failed to fetch benchmark data: {str(e)}")
-                benchmark_error = f"基准数据获取失败: {str(e)}"
+                # 提供更友好的错误信息
+                benchmark_error = f"Failed to fetch benchmark data for {benchmark_id}: {str(e)}"
 
         # 计算性能指标
         metrics = self.metrics_calculator.calculate_all_metrics(
@@ -286,6 +287,9 @@ class BacktestOrchestrator:
             result.benchmark_equity = benchmark_data['equity_curve']
             result.benchmark_name = benchmark_data['benchmark_name']
             result.benchmark_id = benchmark_data['benchmark_id']
+        elif benchmark_error:
+            # If there was a benchmark error, attach it to the result for the API to handle
+            result.benchmark_error = benchmark_error
 
         return result
 

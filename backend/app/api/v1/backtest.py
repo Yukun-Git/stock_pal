@@ -399,7 +399,15 @@ class BacktestResource(Resource):
 
             # Prepare benchmark data (if available)
             benchmark_response = None
-            if hasattr(result, 'benchmark_equity') and result.benchmark_equity is not None:
+            if hasattr(result, 'benchmark_error') and result.metadata.get('benchmark_error'):
+                # If benchmark error occurred, return error info instead of data
+                benchmark_response = {
+                    'error': True,
+                    'message': result.metadata.get('benchmark_error'),
+                    'id': data.get('benchmark'),  # Include the requested benchmark ID
+                    'name': data.get('benchmark')  # Include the requested benchmark ID
+                }
+            elif hasattr(result, 'benchmark_equity') and result.benchmark_equity is not None:
                 # Convert benchmark equity curve to API format
                 benchmark_equity_api = []
                 for _, row in result.benchmark_equity.iterrows():
@@ -423,7 +431,8 @@ class BacktestResource(Resource):
                     'id': result.benchmark_id,
                     'name': result.benchmark_name,
                     'equity_curve': benchmark_equity_api,
-                    'metrics': benchmark_metrics
+                    'metrics': benchmark_metrics,
+                    'error': False  # Explicitly mark as no error
                 }
 
             return {

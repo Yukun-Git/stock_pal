@@ -158,8 +158,10 @@ export interface BenchmarkMetrics {
 export interface Benchmark {
   id: string;                        // 基准ID（如CSI300）
   name: string;                      // 基准名称（如沪深300）
-  equity_curve: EquityPoint[];       // 基准权益曲线
-  metrics: BenchmarkMetrics;         // 基准指标
+  equity_curve?: EquityPoint[];      // 基准权益曲线（可选）
+  metrics?: BenchmarkMetrics;        // 基准指标（可选，获取失败时为空）
+  error?: boolean;                   // 是否有错误
+  message?: string;                  // 错误消息（如果有）
 }
 
 export interface BacktestResponse {
