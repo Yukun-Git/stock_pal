@@ -262,6 +262,7 @@ Before finalizing a design:
 
 Current design documents in this folder:
 
+- [watchlist_system_design.md](watchlist_system_design.md) - 自选股管理系统详细设计（2025-11-19）
 - [backtest_post_mvp_enhancements.md](backtest_post_mvp_enhancements.md) - Post-MVP backtest enhancements
 - [risk_manager_detailed_design.md](risk_manager_detailed_design.md) - Risk manager backend design
 - [risk_manager_frontend_design.md](risk_manager_frontend_design.md) - Risk manager frontend design

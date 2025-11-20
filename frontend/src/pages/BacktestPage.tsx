@@ -16,10 +16,11 @@ import {
   FloatButton,
   Tag,
 } from 'antd';
-import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined } from '@ant-design/icons';
+import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined, StarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Strategy, BacktestResponse, RiskConfig, BenchmarkOption } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
+import { useWatchlistStore } from '@/stores/useWatchlistStore';
 import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
 import EquityCurveChart from '@/components/EquityCurveChart';
@@ -95,6 +96,9 @@ export default function BacktestPage() {
   const [lastRequestData, setLastRequestData] = useState<any>(null);  // 保存最后的请求数据
   const [benchmarks, setBenchmarks] = useState<BenchmarkOption[]>([]);  // 基准列表
 
+  // Watchlist store
+  const addStockToWatchlist = useWatchlistStore(state => state.addStock);
+
   // Load strategies and benchmarks on mount
   useEffect(() => {
     loadStrategies();
@@ -149,6 +153,32 @@ export default function BacktestPage() {
     }
 
     setSelectedStrategies(newSelected);
+  };
+
+  // 处理添加到自选股
+  const handleAddToWatchlist = async () => {
+    const stockCode = form.getFieldValue('symbol');
+    if (!stockCode) {
+      message.warning('请先选择股票');
+      return;
+    }
+
+    // Find stock info from the stock list
+    const stockInfo = STOCK_LIST.find(stock => stock.code === stockCode);
+    if (!stockInfo) {
+      message.error('未找到股票信息');
+      return;
+    }
+
+    try {
+      await addStockToWatchlist({
+        stock_code: stockInfo.code,
+        stock_name: stockInfo.name,
+      });
+      // Success message is handled by the store
+    } catch (error) {
+      // Error message is handled by the store
+    }
   };
 
   // 处理查看对比功能
@@ -491,7 +521,7 @@ export default function BacktestPage() {
           }}
         >
           <Row gutter={16}>
-            <Col xs={24} md={8}>
+            <Col xs={20} md={7}>
               <Form.Item
                 label="股票代码/名称"
                 name="symbol"
@@ -500,16 +530,28 @@ export default function BacktestPage() {
                 <Select
                   placeholder="选择股票"
                   showSearch
-                  optionFilterProp="children"
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
+                  filterOption={(input, option) => {
+                    if (!input) return true;
+                    const searchValue = input.trim().toLowerCase();
+                    const label = String(option?.label || '').toLowerCase();
+                    return label.indexOf(searchValue) !== -1;
+                  }}
                   options={STOCK_LIST.map(stock => ({
                     value: stock.code,
                     label: `${stock.code} - ${stock.name}`,
                   }))}
                 />
               </Form.Item>
+            </Col>
+
+            <Col xs={4} md={1} style={{ display: 'flex', alignItems: 'center', paddingTop: 30 }}>
+              <Button
+                type="text"
+                icon={<StarOutlined />}
+                onClick={handleAddToWatchlist}
+                title="添加到自选股"
+                style={{ fontSize: 18, color: '#faad14' }}
+              />
             </Col>
 
             <Col xs={24} md={8}>

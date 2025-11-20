@@ -351,12 +351,12 @@ config/
 #### P0 基准对比
 - [x] ✅ API返回Alpha/Beta/IR/TE
 - [x] ✅ API返回基准权益曲线
-- [ ] 前端显示基准对比指标
-- [ ] 前端图表叠加基准曲线
+- [x] ✅ 前端显示基准对比指标 (BenchmarkComparisonCard组件)
+- [x] ✅ 前端图表叠加基准曲线 (EquityCurveChart支持benchmarkData)
 - [x] ✅ 支持4种基准指数
 
-**完成时间**: 2025-11-16 (后端)
-**完成度**: 60% (后端100%, 前端0%)
+**完成时间**: 2025-11-16 (后端), 已完成 (前端)
+**完成度**: 100%
 **进度文档**: `doc/development/progress/benchmark_comparison_progress.md`
 
 #### P1 数据库持久化

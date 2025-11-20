@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from .base import BaseDataAdapter
+from typing import List
 
 
 class YFinanceAdapter(BaseDataAdapter):
@@ -21,7 +22,27 @@ class YFinanceAdapter(BaseDataAdapter):
     @property
     def name(self) -> str:
         """适配器名称."""
-        return "YFinance"
+        return "yfinance"
+
+    @property
+    def display_name(self) -> str:
+        """适配器显示名称."""
+        return "Yahoo Finance"
+
+    @property
+    def supported_markets(self) -> List[str]:
+        """支持的市场类型."""
+        return ["A-share", "HK", "US"]
+
+    @property
+    def requires_auth(self) -> bool:
+        """是否需要认证."""
+        return False
+
+    @property
+    def timeout(self) -> int:
+        """请求超时时间."""
+        return 20
 
     def get_stock_data(
         self,
@@ -230,14 +251,3 @@ class YFinanceAdapter(BaseDataAdapter):
                 'market': self._detect_market(symbol)
             }
 
-    def supports_market(self, market: str) -> bool:
-        """检查是否支持指定市场.
-
-        Args:
-            market: 市场类型
-
-        Returns:
-            是否支持
-        """
-        # yfinance支持全球市场
-        return market in ['A-share', 'HK', 'US', 'Unknown']

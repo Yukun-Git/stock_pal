@@ -55,6 +55,53 @@ def jwt_required_custom(fn):
     return wrapper
 
 
+def jwt_required_resource(fn):
+    """
+    JWT required decorator for Flask-RESTful Resource classes.
+
+    This decorator is specifically designed for Resource class methods.
+    It returns dict/tuple instead of Flask Response objects.
+
+    Usage:
+        class MyResource(Resource):
+            @jwt_required_resource
+            def get(self, current_user):
+                return {"user_id": current_user['id']}, 200
+    """
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        try:
+            # Verify JWT token
+            verify_jwt_in_request()
+
+            # Get user ID from token
+            user_id = get_jwt_identity()
+
+            # Fetch user from database
+            current_user = AuthService.get_user_by_id(user_id)
+
+            if not current_user:
+                logger.warning(f"JWT token valid but user {user_id} not found")
+                return {
+                    "status": "error",
+                    "error": "用户不存在或已被禁用",
+                    "code": "USER_NOT_FOUND"
+                }, 401
+
+            # Call the wrapped function with current_user
+            return fn(self, current_user, *args, **kwargs)
+
+        except Exception as e:
+            logger.error(f"JWT authentication error: {e}")
+            return {
+                "status": "error",
+                "error": "认证失败",
+                "code": "AUTHENTICATION_FAILED"
+            }, 401
+
+    return wrapper
+
+
 def get_current_user():
     """
     Get current authenticated user from JWT token.

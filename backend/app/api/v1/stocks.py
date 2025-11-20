@@ -95,12 +95,13 @@ class StockDataResource(Resource):
             # Get stock info
             stock_info = DataService.get_stock_info(symbol)
 
-            # Get stock data
-            df = DataService.get_stock_data(
+            # Get stock data (with failover)
+            df, adapter_used = DataService.get_stock_data(
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
-                adjust=adjust
+                adjust=adjust,
+                use_failover=True
             )
 
             # Calculate indicators if requested
@@ -111,12 +112,18 @@ class StockDataResource(Resource):
             df['date'] = df['date'].astype(str)
             data = df.to_dict('records')
 
+            response_data = {
+                'stock': stock_info,
+                'klines': data
+            }
+
+            # 添加适配器信息(如果使用了故障转移)
+            if adapter_used:
+                response_data['data_source'] = adapter_used
+
             return {
                 'success': True,
-                'data': {
-                    'stock': stock_info,
-                    'klines': data
-                }
+                'data': response_data
             }, 200
 
         except Exception as e:

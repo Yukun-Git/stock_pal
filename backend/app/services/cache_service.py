@@ -293,11 +293,12 @@ class CacheService:
         if need_fetch:
             try:
                 logger.info(f"Fetching data for {symbol} from {fetch_start} to {fetch_end}")
-                new_data = DataService.get_stock_data(
+                new_data, _ = DataService.get_stock_data(
                     symbol=symbol,
                     start_date=fetch_start,
                     end_date=fetch_end,
-                    adjust=adjust
+                    adjust=adjust,
+                    use_failover=True
                 )
                 if not new_data.empty:
                     self._save_to_cache(symbol, new_data)

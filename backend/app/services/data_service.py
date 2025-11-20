@@ -2,14 +2,16 @@
 
 使用可配置的数据适配器获取股票数据。
 支持多种数据源：AkShare、YFinance等。
+支持故障转移机制。
 """
 
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 from flask import current_app
 
 from app.adapters import DataAdapterFactory
+from app.services.failover_service import get_failover_service
 
 
 class DataService:
@@ -61,37 +63,61 @@ class DataService:
             raise Exception(f"Failed to fetch stock list: {str(e)}")
 
     @staticmethod
-    def search_stock(keyword: str) -> list:
+    def search_stock(keyword: str, use_failover: bool = True) -> list:
         """搜索股票.
 
         Args:
             keyword: 股票代码或名称关键词
+            use_failover: 是否使用故障转移机制
 
         Returns:
             匹配的股票列表
         """
-        try:
+        if use_failover:
+            # 使用故障转移服务
+            try:
+                failover_service = get_failover_service()
+                results, adapter_name = failover_service.search_stock_with_failover(keyword)
+                return results
+            except Exception as e:
+                raise Exception(f"Failed to search stocks: {str(e)}")
+        else:
+            # 使用传统方式(向后兼容)
             adapter = DataService._get_adapter()
-            return adapter.search_stock(keyword)
 
-        except Exception as e:
-            # 如果当前适配器不支持搜索，尝试降级到AkShare
-            if adapter.name != 'AkShare':
-                try:
-                    akshare_adapter = DataAdapterFactory.create('akshare')
-                    return akshare_adapter.search_stock(keyword)
-                except:
-                    pass
+            def fallback_to_akshare():
+                """降级到AkShare搜索."""
+                akshare_adapter = DataAdapterFactory.create('akshare')
+                return akshare_adapter.search_stock(keyword)
 
-            raise Exception(f"Failed to search stocks: {str(e)}")
+            try:
+                results = adapter.search_stock(keyword)
+
+                # 当前适配器有返回结果或本身就是AkShare时直接返回
+                if results or adapter.name.lower() == 'akshare':
+                    return results
+
+                # 否则尝试使用AkShare作为兜底，以保证中文搜索可用
+                return fallback_to_akshare()
+
+            except Exception as e:
+                # 如果当前适配器不可用，尝试降级到AkShare
+                if adapter.name.lower() != 'akshare':
+                    try:
+                        return fallback_to_akshare()
+                    except Exception:
+                        pass
+
+                raise Exception(f"Failed to search stocks: {str(e)}")
 
     @staticmethod
     def get_stock_data(
         symbol: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        adjust: str = 'qfq'
-    ) -> pd.DataFrame:
+        adjust: str = 'qfq',
+        use_failover: bool = True
+    ) -> Tuple[pd.DataFrame, Optional[str]]:
         """获取股票历史数据.
 
         Args:
@@ -99,9 +125,11 @@ class DataService:
             start_date: 开始日期 'YYYYMMDD' 格式 (可选)
             end_date: 结束日期 'YYYYMMDD' 格式 (可选)
             adjust: 复权类型 ('qfq'=前复权, 'hfq'=后复权, ''=不复权)
+            use_failover: 是否使用故障转移机制
 
         Returns:
-            DataFrame包含标准列: date, open, high, low, close, volume等
+            Tuple[DataFrame, str]: (数据, 使用的适配器名称)
+            如果use_failover=False，返回 (DataFrame, None)
         """
         try:
             # 设置默认日期
@@ -110,11 +138,18 @@ class DataService:
             if not start_date:
                 start_date = (datetime.now() - timedelta(days=730)).strftime('%Y%m%d')
 
-            # 获取适配器并获取数据
-            adapter = DataService._get_adapter()
-            df = adapter.get_stock_data(symbol, start_date, end_date, adjust)
-
-            return df
+            if use_failover:
+                # 使用故障转移服务
+                failover_service = get_failover_service()
+                df, adapter_name = failover_service.get_stock_data_with_failover(
+                    symbol, start_date, end_date, adjust
+                )
+                return df, adapter_name
+            else:
+                # 使用传统方式(向后兼容)
+                adapter = DataService._get_adapter()
+                df = adapter.get_stock_data(symbol, start_date, end_date, adjust)
+                return df, None
 
         except Exception as e:
             raise Exception(f"Failed to fetch stock data: {str(e)}")

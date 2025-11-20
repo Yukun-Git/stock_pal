@@ -6,6 +6,10 @@ import type {
   BacktestRequest,
   BacktestResponse,
   BenchmarkOption,
+  DataAdapter,
+  AdapterStatus,
+  AdapterMetrics,
+  HealthCheckResponse,
 } from '@/types';
 import { getAuthToken, clearAuth } from '@/utils/auth';
 
@@ -158,6 +162,143 @@ export const backtestApi = {
    */
   getBenchmarks: async (): Promise<BenchmarkOption[]> => {
     const response = await api.get('/api/v1/benchmarks');
+    return response.data.data;
+  },
+};
+
+// Watchlist API
+export const watchlistApi = {
+  /**
+   * Get user's watchlist
+   */
+  getWatchlist: async (params?: {
+    group_id?: number;
+    sort_by?: 'code' | 'name' | 'created_at';
+    sort_order?: 'asc' | 'desc';
+    include_quotes?: boolean;
+  }) => {
+    const response = await api.get('/api/v1/watchlist', { params });
+    return response.data.data;
+  },
+
+  /**
+   * Add stock to watchlist
+   */
+  addStock: async (data: import('@/types').AddWatchlistStockRequest) => {
+    const response = await api.post('/api/v1/watchlist', data);
+    return response.data.data;
+  },
+
+  /**
+   * Update watchlist item
+   */
+  updateStock: async (stockId: number, data: import('@/types').UpdateWatchlistStockRequest) => {
+    const response = await api.put(`/api/v1/watchlist/${stockId}`, data);
+    return response.data.data;
+  },
+
+  /**
+   * Delete watchlist item
+   */
+  deleteStock: async (stockId: number) => {
+    const response = await api.delete(`/api/v1/watchlist/${stockId}`);
+    return response.data;
+  },
+
+  /**
+   * Batch delete watchlist items
+   */
+  batchDelete: async (data: import('@/types').BatchDeleteWatchlistRequest) => {
+    const response = await api.delete('/api/v1/watchlist/batch', { data });
+    return response.data.data;
+  },
+
+  /**
+   * Batch import watchlist items
+   */
+  batchImport: async (data: import('@/types').BatchImportWatchlistRequest) => {
+    const response = await api.post('/api/v1/watchlist/batch', data);
+    return response.data.data as import('@/types').BatchImportWatchlistResponse;
+  },
+
+  /**
+   * Check if stock is in watchlist
+   */
+  checkStock: async (stockCode: string) => {
+    const response = await api.get(`/api/v1/watchlist/check/${stockCode}`);
+    return response.data.data as import('@/types').CheckWatchlistResponse;
+  },
+};
+
+// Watchlist Groups API
+export const watchlistGroupApi = {
+  /**
+   * Get user's groups
+   */
+  getGroups: async (params?: { include_counts?: boolean }) => {
+    const response = await api.get('/api/v1/watchlist/groups', { params });
+    return response.data.data;
+  },
+
+  /**
+   * Create a new group
+   */
+  createGroup: async (data: import('@/types').CreateGroupRequest) => {
+    const response = await api.post('/api/v1/watchlist/groups', data);
+    return response.data.data;
+  },
+
+  /**
+   * Update a group
+   */
+  updateGroup: async (groupId: number, data: import('@/types').UpdateGroupRequest) => {
+    const response = await api.put(`/api/v1/watchlist/groups/${groupId}`, data);
+    return response.data.data;
+  },
+
+  /**
+   * Delete a group
+   */
+  deleteGroup: async (groupId: number) => {
+    const response = await api.delete(`/api/v1/watchlist/groups/${groupId}`);
+    return response.data;
+  },
+};
+
+// Data Source Adapter API
+export const adapterApi = {
+  /**
+   * Get all registered adapters
+   */
+  getAdapters: async (): Promise<DataAdapter[]> => {
+    const response = await api.get('/api/v1/adapters');
+    return response.data.data;
+  },
+
+  /**
+   * Get adapter status (metadata + health + metrics)
+   */
+  getAdapterStatus: async (): Promise<AdapterStatus[]> => {
+    const response = await api.get('/api/v1/adapters/status');
+    return response.data.data;
+  },
+
+  /**
+   * Run health check on all adapters
+   */
+  healthCheck: async (): Promise<HealthCheckResponse> => {
+    const response = await api.get('/api/v1/adapters/health');
+    return response.data.data;
+  },
+
+  /**
+   * Get metrics for all adapters or a specific adapter
+   */
+  getMetrics: async (adapterName?: string): Promise<Record<string, AdapterMetrics> | AdapterMetrics> => {
+    const url = adapterName
+      ? `/api/v1/adapters/metrics/${adapterName}`
+      : '/api/v1/adapters/metrics';
+    const response = await api.get(url);
     return response.data.data;
   },
 };

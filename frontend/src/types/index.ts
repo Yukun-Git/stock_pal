@@ -236,3 +236,201 @@ export interface RiskEvent {
   details?: Record<string, any>;         // 额外详情
 }
 
+// ===== 自选股管理相关类型 =====
+
+/**
+ * 自选股分组
+ */
+export interface WatchlistGroup {
+  id: number;
+  user_id: number;
+  name: string;
+  color?: string;
+  sort_order: number;
+  is_default?: boolean;
+  stock_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 自选股股票
+ */
+export interface WatchlistStock {
+  id: number;
+  user_id: number;
+  stock_code: string;
+  stock_name: string;
+  group_id?: number | null;
+  group_name?: string;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+  quote?: WatchlistQuote;  // 实时行情（Phase 3）
+}
+
+/**
+ * 实时行情数据（Phase 3）
+ */
+export interface WatchlistQuote {
+  code: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  change_amount: number;
+  volume: number;
+  turnover: number;
+  turnover_rate: number;
+  high: number;
+  low: number;
+  open: number;
+  pre_close: number;
+  timestamp: string;
+}
+
+/**
+ * 添加自选股请求
+ */
+export interface AddWatchlistStockRequest {
+  stock_code: string;
+  stock_name: string;
+  group_id?: number;
+  note?: string;
+}
+
+/**
+ * 更新自选股请求
+ */
+export interface UpdateWatchlistStockRequest {
+  group_id?: number;
+  note?: string;
+}
+
+/**
+ * 批量删除自选股请求
+ */
+export interface BatchDeleteWatchlistRequest {
+  ids: number[];
+}
+
+/**
+ * 批量导入自选股请求
+ */
+export interface BatchImportWatchlistRequest {
+  stocks: Array<{
+    stock_code: string;
+    stock_name: string;
+  }>;
+  group_id?: number;
+  skip_duplicates?: boolean;
+}
+
+/**
+ * 批量导入自选股响应
+ */
+export interface BatchImportWatchlistResponse {
+  imported_count: number;
+  skipped_count: number;
+  failed: Array<{
+    stock_code?: string;
+    stock_name?: string;
+    stock?: any;
+    reason: string;
+  }>;
+}
+
+/**
+ * 创建分组请求
+ */
+export interface CreateGroupRequest {
+  name: string;
+  color?: string;
+  sort_order?: number;
+}
+
+/**
+ * 更新分组请求
+ */
+export interface UpdateGroupRequest {
+  name?: string;
+  color?: string;
+  sort_order?: number;
+}
+
+/**
+ * 检查股票是否在自选股响应
+ */
+export interface CheckWatchlistResponse {
+  in_watchlist: boolean;
+  watchlist_id?: number;
+  group_name?: string;
+}
+
+// ===== 数据源适配器相关类型 =====
+
+/**
+ * 数据源适配器元数据
+ */
+export interface DataAdapter {
+  name: string;                          // 适配器名称（如 akshare, yfinance）
+  display_name: string;                  // 显示名称（如 AkShare (东方财富)）
+  supported_markets: string[];           // 支持的市场类型
+  requires_auth: boolean;                // 是否需要认证
+  timeout: number;                       // 超时时间（秒）
+}
+
+/**
+ * 适配器健康状态
+ */
+export type AdapterHealthStatus = 'online' | 'offline' | 'error' | 'unknown';
+
+/**
+ * 适配器健康检查结果
+ */
+export interface AdapterHealth {
+  status: AdapterHealthStatus;
+  response_time_ms: number;
+  message: string;
+  checked_at: string;
+}
+
+/**
+ * 适配器性能指标
+ */
+export interface AdapterMetrics {
+  success_count: number;
+  fail_count: number;
+  total_response_ms: number;
+  last_success: string | null;
+  last_failure: string | null;
+  last_error?: string;
+  avg_response_ms?: number;
+}
+
+/**
+ * 适配器状态（包含元数据+健康+指标）
+ */
+export interface AdapterStatus extends DataAdapter {
+  health_status: AdapterHealthStatus;
+  last_check: string | null;
+  metrics: AdapterMetrics;
+}
+
+/**
+ * 健康检查汇总
+ */
+export interface HealthSummary {
+  total: number;
+  online: number;
+  offline: number;
+  error: number;
+}
+
+/**
+ * 健康检查响应
+ */
+export interface HealthCheckResponse {
+  summary: HealthSummary;
+  adapters: Record<string, AdapterHealth>;
+}
+

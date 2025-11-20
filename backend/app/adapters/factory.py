@@ -87,9 +87,11 @@ def _register_builtin_adapters():
     """注册所有内置的数据适配器."""
     from .akshare_adapter import AkShareAdapter
     from .yfinance_adapter import YFinanceAdapter
+    from .baostock_adapter import BaostockAdapter
 
     DataAdapterFactory.register('akshare', AkShareAdapter)
     DataAdapterFactory.register('yfinance', YFinanceAdapter)
+    DataAdapterFactory.register('baostock', BaostockAdapter)
 
 
 # 模块加载时自动注册

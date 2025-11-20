@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from .base import BaseDataAdapter
+from typing import List
 
 
 class AkShareAdapter(BaseDataAdapter):
@@ -20,7 +21,27 @@ class AkShareAdapter(BaseDataAdapter):
     @property
     def name(self) -> str:
         """适配器名称."""
-        return "AkShare"
+        return "akshare"
+
+    @property
+    def display_name(self) -> str:
+        """适配器显示名称."""
+        return "AkShare (东方财富)"
+
+    @property
+    def supported_markets(self) -> List[str]:
+        """支持的市场类型."""
+        return ["A-share", "HK"]
+
+    @property
+    def requires_auth(self) -> bool:
+        """是否需要认证."""
+        return False
+
+    @property
+    def timeout(self) -> int:
+        """请求超时时间."""
+        return 15
 
     def get_stock_data(
         self,
@@ -284,7 +305,7 @@ class AkShareAdapter(BaseDataAdapter):
         return df
 
     def search_stock(self, keyword: str) -> list:
-        """搜索股票.
+        """搜索股票（支持A股+港股）.
 
         Args:
             keyword: 股票代码或名称
@@ -292,20 +313,42 @@ class AkShareAdapter(BaseDataAdapter):
         Returns:
             股票列表
         """
+        results = []
+
         try:
-            stock_list = ak.stock_info_a_code_name()
-
-            # 搜索
-            mask = (
-                stock_list['code'].str.contains(keyword, case=False, na=False) |
-                stock_list['name'].str.contains(keyword, case=False, na=False)
+            # 搜索A股
+            a_stock_list = ak.stock_info_a_code_name()
+            a_mask = (
+                a_stock_list['code'].str.contains(keyword, case=False, na=False) |
+                a_stock_list['name'].str.contains(keyword, case=False, na=False)
             )
-
-            result = stock_list[mask].head(20)
-            return result.to_dict('records')
+            a_result = a_stock_list[a_mask].head(10)
+            results.extend(a_result.to_dict('records'))
 
         except Exception as e:
-            raise Exception(f"Failed to search stocks: {str(e)}")
+            print(f"Warning: Failed to search A-share stocks: {str(e)}")
+
+        try:
+            # 搜索港股
+            hk_spot = ak.stock_hk_spot()
+            hk_mask = (
+                hk_spot['代码'].str.contains(keyword, case=False, na=False) |
+                hk_spot['中文名称'].str.contains(keyword, case=False, na=False)
+            )
+            hk_result = hk_spot[hk_mask].head(10)
+
+            # 转换港股格式为统一格式
+            for _, row in hk_result.iterrows():
+                results.append({
+                    'code': row['代码'] + '.HK',
+                    'name': row['中文名称']
+                })
+
+        except Exception as e:
+            print(f"Warning: Failed to search HK stocks: {str(e)}")
+
+        # 限制总结果数量
+        return results[:20]
 
     def get_stock_info(self, symbol: str) -> dict:
         """获取股票基本信息.

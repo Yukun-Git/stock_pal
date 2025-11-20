@@ -43,9 +43,9 @@ services:
       - API_VERSION=v1
       - CORS_ORIGINS=http://localhost:4000,http://127.0.0.1:4000,http://localhost:4080,http://127.0.0.1:4080,http://localhost
       # 数据源配置：可选值 'akshare' 或 'yfinance'
-      # - akshare: 免费，支持A股+港股，但服务不稳定
-      # - yfinance: 免费，支持全球市场，服务稳定（推荐）
-      - DATA_SOURCE=yfinance
+      # - akshare: 免费，支持A股+港股搜索和中文名称，服务不稳定
+      # - yfinance: 免费，支持全球市场，服务稳定，但不支持中文搜索
+      - DATA_SOURCE=akshare
       - CACHE_EXPIRY=3600
       - DEFAULT_INITIAL_CAPITAL=100000
       - DEFAULT_COMMISSION_RATE=0.0003
