@@ -7,6 +7,7 @@ from app.services.backtest_service import BacktestService
 from app.services.watchlist_service import WatchlistService
 from app.services.watchlist_group_service import WatchlistGroupService
 from app.services.failover_service import FailoverService, get_failover_service
+from app.services.ai_analysis_service import AIAnalysisService, get_ai_analysis_service
 
 __all__ = [
     'DataService',
@@ -17,4 +18,6 @@ __all__ = [
     'WatchlistGroupService',
     'FailoverService',
     'get_failover_service',
+    'AIAnalysisService',
+    'get_ai_analysis_service',
 ]

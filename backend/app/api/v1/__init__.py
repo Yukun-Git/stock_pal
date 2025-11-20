@@ -25,6 +25,9 @@ from app.api.v1.adapters import (
     AdapterHealthResource,
     AdapterMetricsResource
 )
+from app.api.v1.ai_analysis import (
+    BacktestAnalyzeResource
+)
 
 
 def register_routes(api: Api):
@@ -60,3 +63,6 @@ def register_routes(api: Api):
     api.add_resource(AdapterStatusResource, '/api/v1/adapters/status')
     api.add_resource(AdapterHealthResource, '/api/v1/adapters/health')
     api.add_resource(AdapterMetricsResource, '/api/v1/adapters/metrics', '/api/v1/adapters/metrics/<string:name>')
+
+    # AI Analysis routes
+    api.add_resource(BacktestAnalyzeResource, '/api/v1/backtest/analyze')

@@ -47,6 +47,12 @@ services:
       # - yfinance: 免费，支持全球市场，服务稳定，但不支持中文搜索
       - DATA_SOURCE=akshare
       - CACHE_EXPIRY=3600
+      # AI分析服务配置（阿里云通义千问）
+      # 获取API Key: https://dashscope.console.aliyun.com/apiKey
+      - QWEN_API_KEY=sk-2935ed79350944fe8c67324351d86ea8
+      - QWEN_MODEL=qwen-plus
+      - QWEN_TIMEOUT=60
+      - QWEN_MAX_TOKENS=1000
       - DEFAULT_INITIAL_CAPITAL=100000
       - DEFAULT_COMMISSION_RATE=0.0003
       # PostgreSQL 配置

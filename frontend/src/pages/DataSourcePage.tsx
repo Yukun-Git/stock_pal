@@ -69,7 +69,9 @@ const DataSourcePage: React.FC = () => {
   };
 
   useEffect(() => {
+    // 初次加载时先获取状态，然后执行健康检查
     loadAdapterStatus();
+    runHealthCheck();
   }, []);
 
   // 健康状态图标

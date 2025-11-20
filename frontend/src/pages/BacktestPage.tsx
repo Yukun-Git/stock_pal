@@ -15,8 +15,9 @@ import {
   Input,
   FloatButton,
   Tag,
+  Space,
 } from 'antd';
-import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined, StarOutlined } from '@ant-design/icons';
+import { SearchOutlined, ThunderboltOutlined, CheckCircleOutlined, FileTextOutlined, ArrowUpOutlined, StarOutlined, BulbOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Strategy, BacktestResponse, RiskConfig, BenchmarkOption } from '@/types';
 import { strategyApi, backtestApi } from '@/services/api';
@@ -25,6 +26,7 @@ import { formatCurrency, formatPercent, toApiDateFormat } from '@/utils/format';
 import KLineChart from '@/components/KLineChart';
 import EquityCurveChart from '@/components/EquityCurveChart';
 import StrategyDocModal from '@/components/StrategyDocModal';
+import AIAnalysisModal from '@/components/AIAnalysisModal';
 import { ParameterInput } from '@/components/parameters';
 import { SignalAnalysisCard } from '@/components/signalAnalysis';
 import MetricsCard from '@/components/MetricsCard';
@@ -95,6 +97,8 @@ export default function BacktestPage() {
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding());
   const [lastRequestData, setLastRequestData] = useState<any>(null);  // 保存最后的请求数据
   const [benchmarks, setBenchmarks] = useState<BenchmarkOption[]>([]);  // 基准列表
+  const [aiModalOpen, setAiModalOpen] = useState(false);  // AI分析模态框状态
+  const [aiAnalysisData, setAiAnalysisData] = useState<any>(null);  // AI分析数据
 
   // Watchlist store
   const addStockToWatchlist = useWatchlistStore(state => state.addStock);
@@ -213,6 +217,49 @@ export default function BacktestPage() {
     } finally {
       setComparisonLoading(false);
     }
+  };
+
+  // 处理AI智能分析
+  const handleAIAnalysis = () => {
+    if (!result || !lastRequestData) {
+      message.warning('请先完成一次回测');
+      return;
+    }
+
+    // 准备AI分析数据
+    const selectedStock = STOCK_LIST.find(s => s.code === lastRequestData.symbol);
+    const strategyInfo = strategies.find(s =>
+      selectedStrategies.length === 1 ? s.id === selectedStrategies[0] : false
+    );
+
+    const analysisData = {
+      stock_info: {
+        symbol: lastRequestData.symbol,
+        name: selectedStock?.name || lastRequestData.symbol,
+        period: `${lastRequestData.start_date} 至 ${lastRequestData.end_date}`,
+      },
+      strategy_info: {
+        name: strategyInfo?.name || `组合策略(${selectedStrategies.length}个)`,
+        description: strategyInfo?.description || '多策略组合',
+      },
+      parameters: {
+        initial_capital: lastRequestData.initial_capital,
+        commission_rate: lastRequestData.commission_rate,
+        strategy_params: lastRequestData.strategy_params,
+      },
+      backtest_results: {
+        total_return: result.results.total_return,
+        win_rate: result.results.win_rate,
+        max_drawdown: result.results.max_drawdown,
+        profit_factor: result.results.profit_factor,
+        total_trades: result.results.total_trades,
+        winning_trades: result.results.winning_trades,
+        losing_trades: result.results.losing_trades,
+      },
+    };
+
+    setAiAnalysisData(analysisData);
+    setAiModalOpen(true);
   };
 
   const handleSubmit = async (values: any) => {
@@ -975,6 +1022,47 @@ export default function BacktestPage() {
             columns={4}
           />
 
+          {/* AI 智能分析 */}
+          <Card
+            style={{
+              marginTop: 24,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              border: 'none',
+            }}
+          >
+            <Row align="middle" justify="space-between">
+              <Col>
+                <Space direction="vertical" size={4}>
+                  <Space align="center">
+                    <BulbOutlined style={{ fontSize: 24, color: '#fff' }} />
+                    <Title level={4} style={{ margin: 0, color: '#fff' }}>
+                      AI智能分析
+                    </Title>
+                  </Space>
+                  <Text style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: 13 }}>
+                    使用阿里云通义千问AI深度分析您的回测结果，获取专业投资建议
+                  </Text>
+                </Space>
+              </Col>
+              <Col>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<BulbOutlined />}
+                  onClick={handleAIAnalysis}
+                  style={{
+                    background: '#fff',
+                    borderColor: '#fff',
+                    color: '#667eea',
+                    fontWeight: 600,
+                  }}
+                >
+                  开始AI分析
+                </Button>
+              </Col>
+            </Row>
+          </Card>
+
           {/* Signal Analysis - Current Market Position */}
           {result.signal_analysis && (
             <SignalAnalysisCard signalAnalysis={result.signal_analysis} />
@@ -1099,6 +1187,13 @@ export default function BacktestPage() {
         strategyId={currentDocStrategyId}
         open={docModalOpen}
         onClose={() => setDocModalOpen(false)}
+      />
+
+      {/* AI Analysis Modal */}
+      <AIAnalysisModal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        backtestData={aiAnalysisData}
       />
 
       {/* Risk Comparison Drawer */}

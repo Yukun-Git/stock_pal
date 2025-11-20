@@ -303,4 +303,39 @@ export const adapterApi = {
   },
 };
 
+// AI Analysis API
+export const aiApi = {
+  /**
+   * Analyze backtest results using AI
+   */
+  analyzeBacktest: async (data: {
+    stock_info: {
+      symbol: string;
+      name: string;
+      period: string;
+    };
+    strategy_info: {
+      name: string;
+      description: string;
+    };
+    parameters: {
+      initial_capital: number;
+      commission_rate: number;
+      strategy_params?: Record<string, any>;
+    };
+    backtest_results: {
+      total_return: number;
+      win_rate: number;
+      max_drawdown: number;
+      profit_factor: number;
+      total_trades: number;
+      winning_trades: number;
+      losing_trades: number;
+    };
+  }) => {
+    const response = await api.post('/api/v1/backtest/analyze', data);
+    return response.data.data;
+  },
+};
+
 export default api;
